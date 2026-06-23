@@ -3,7 +3,83 @@
 
 #include <vector>
 
+// Fortran LAPACK interface
+extern "C" {
+void dgetrf_(const int* m, const int* n, double* a, const int* lda, int* ipiv,
+             int* info);
+
+void dgetrs_(const char* trans, const int* n, const int* nrhs, const double* a,
+             const int* lda, const int* ipiv, double* b, const int* ldb,
+             int* info);
+
+void sgetrf_(const int* m, const int* n, float* a, const int* lda, int* ipiv,
+             int* info);
+
+void sgetrs_(const char* trans, const int* n, const int* nrhs, const float* a,
+             const int* lda, const int* ipiv, float* b, const int* ldb,
+             int* info);
+}
+
 namespace xcgd {
+
+namespace detail {
+
+template <typename T>
+struct Lapack;
+
+template <>
+struct Lapack<double> {
+  static void getrf(int n, double* A, int* ipiv) {
+    int info = 0;
+    dgetrf_(&n, &n, A, &n, ipiv, &info);
+
+    if (info < 0) {
+      throw std::runtime_error("dgetrf: illegal argument " +
+                               std::to_string(-info));
+    } else if (info > 0) {
+      throw std::runtime_error("dgetrf: singular matrix");
+    }
+  }
+
+  static void getrs(char trans, int n, int nrhs, const double* LU,
+                    const int* ipiv, double* B) {
+    int info = 0;
+    dgetrs_(&trans, &n, &nrhs, LU, &n, ipiv, B, &n, &info);
+
+    if (info != 0) {
+      throw std::runtime_error("dgetrs: illegal argument " +
+                               std::to_string(-info));
+    }
+  }
+};
+
+template <>
+struct Lapack<float> {
+  static void getrf(int n, float* A, int* ipiv) {
+    int info = 0;
+    sgetrf_(&n, &n, A, &n, ipiv, &info);
+
+    if (info < 0) {
+      throw std::runtime_error("sgetrf: illegal argument " +
+                               std::to_string(-info));
+    } else if (info > 0) {
+      throw std::runtime_error("sgetrf: singular matrix");
+    }
+  }
+
+  static void getrs(char trans, int n, int nrhs, const float* LU,
+                    const int* ipiv, float* B) {
+    int info = 0;
+    sgetrs_(&trans, &n, &nrhs, LU, &n, ipiv, B, &n, &info);
+
+    if (info != 0) {
+      throw std::runtime_error("sgetrs: illegal argument " +
+                               std::to_string(-info));
+    }
+  }
+};
+
+}  // namespace detail
 
 /**
  * @brief Lagrange interpolation using a Vandermonde-type matrix
@@ -13,13 +89,13 @@ namespace xcgd {
  *     [   .   ]         [   .    ]
  *     [ p(xm) ]         [ Nm(x1) ]
  *
- * Nk(x) = p(x) * ak
- * A = [ a1 | a2 | . | ak ]
+ * Nk(x) = p(x) * ck
+ * C = [ c1 | c2 | . | ck ]
  *
- * Therefore V * A = I => A = V^{-1}
+ * Therefore V * C = I => C = V^{-1}
  *
- * N(x) = p(x) * A^{-1}
- * dN/dx = dp/dx * A^{-1}
+ * N(x) = p(x) * C^{-1}
+ * dN/dx = dp/dx * C^{-1}
  *
  */
 template <typename T, class Basis, class BasisDeriv>
@@ -30,64 +106,48 @@ class Vandermonde2D {
       : x0(x0),
         y0(y0),
         delta(delta),
+        num_nodes(num_nodes),
         basis(basis),
         deriv(deriv),
-        A(num_nodes * num_nodes) {
-    // Build the interpolation matrix
-    std::vector<T> V(num_nodes * num_nodes);
-
+        V(num_nodes * num_nodes),
+        ipiv(num_nodes) {
+    // Build the Vandermonde matrix
     for (int i = 0; i < num_nodes; i++) {
       T x = (X[2 * i] - x0) / delta;
       T y = (X[2 * i + 1] - y0) / delta;
 
-      // Evaluate the row of the interpolation matrix
+      // Evaluate the column of the Vandermonde matrix
       basis(x, y, &V[i * num_nodes]);
     }
 
-    compute_inverse(num_nodes, V, A);
+    // Factor the matrix
+    detail::Lapack<T>::getrf(num_nodes, V.data(), ipiv.data());
   }
 
-  void eval(int num_points, const T* pts, T* N, T* Nx) const {
-    std::vector<T> p(num_nodes);
-    std::vector<T> px(num_nodes);
-    std::vector<T> py(num_nodes);
+  void eval(int num_points, const T* pts, T* Nd) const {
+    const int block_size = 3 * num_nodes;
 
+    const T inv = 1.0 / delta;
     for (int q = 0; q < num_points; q++) {
-      const T x = (pts[2 * q + 0] - x0) / delta;
+      const T x = (pts[2 * q] - x0) / delta;
       const T y = (pts[2 * q + 1] - y0) / delta;
 
-      basis(x, y, p.data());
-      deriv(x, y, px.data(), py.data());
+      T* p = &Nd[block_size * q];
+      T* px = &Nd[block_size * q + num_nodes];
+      T* py = &Nd[block_size * q + 2 * num_nodes];
 
-      T* Nq = &N[q * num_nodes];
-      T* Nxq = &Nx[q * 2 * num_nodes];
+      basis(x, y, p);
+      deriv(x, y, px, py);
 
-      // N(q, i) = sum_a p_a(q) * A(a, i)
       for (int i = 0; i < num_nodes; i++) {
-        T value = T(0);
-
-        for (int a = 0; a < num_nodes; a++) {
-          value += p[a] * A[num_nodes * a + i];
-        }
-
-        Nq[i] = value;
-      }
-
-      // dN_i/dx = (1 / delta) * sum_a dp_a/dxi * A(a, i)
-      // dN_i/dy = (1 / delta) * sum_a dp_a/deta * A(a, i)
-      for (int i = 0; i < num_nodes; i++) {
-        T dx = T(0);
-        T dy = T(0);
-
-        for (int a = 0; a < num_nodes; a++) {
-          dx += px[a] * A[num_nodes * a + i];
-          dy += py[a] * A[num_nodes * a + i];
-        }
-
-        Nxq[2 * i + 0] = dx / delta;
-        Nxq[2 * i + 1] = dy / delta;
+        px[i] *= inv;
+        py[i] *= inv;
       }
     }
+
+    // Solve to obtain the basis functions
+    int nrhs = 3 * num_points;
+    detail::Lapack<T>::getrs('N', num_nodes, nrhs, V.data(), ipiv.data(), Nd);
   }
 
  private:
@@ -97,76 +157,9 @@ class Vandermonde2D {
   const Basis& basis;
   const BasisDeriv& deriv;
 
-  std::vector<T> A;
-
-  static void compute_inverse(int n, const std::vector<T>& M,
-                              std::vector<T>& Minv) {
-    std::vector<T> A(n * n);
-    std::vector<T> I(n * n, T(0));
-
-    std::copy(M.begin(), M.end(), A.begin());
-
-    for (int i = 0; i < n; i++) {
-      I[n * i + i] = T(1);
-    }
-
-    for (int k = 0; k < n; k++) {
-      int pivot = k;
-      T max_abs = abs_value(A[n * k + k]);
-
-      for (int i = k + 1; i < n; i++) {
-        const T value = abs_value(A[n * i + k]);
-
-        if (value > max_abs) {
-          max_abs = value;
-          pivot = i;
-        }
-      }
-
-      if (max_abs == T(0)) {
-        throw std::runtime_error(
-            "Vandermonde2D interpolation matrix is singular");
-      }
-
-      if (pivot != k) {
-        for (int j = 0; j < n; j++) {
-          std::swap(A[n * k + j], A[n * pivot + j]);
-          std::swap(I[n * k + j], I[n * pivot + j]);
-        }
-      }
-
-      const T Akk = A[n * k + k];
-
-      for (int j = 0; j < n; j++) {
-        A[n * k + j] /= Akk;
-        I[n * k + j] /= Akk;
-      }
-
-      for (int i = 0; i < n; i++) {
-        if (i == k) {
-          continue;
-        }
-
-        const T factor = A[n * i + k];
-
-        if (factor == T(0)) {
-          continue;
-        }
-
-        for (int j = 0; j < n; j++) {
-          A[n * i + j] -= factor * A[n * k + j];
-          I[n * i + j] -= factor * I[n * k + j];
-        }
-      }
-    }
-
-    Minv = std::move(I);
-  }
-
-  static T abs_value(T x) {
-    using std::abs;
-    return abs(x);
-  }
+  // Storage for the factorization of V
+  std::vector<T> V;
+  std::vector<int> ipiv;
 };
 
 }  // namespace xcgd

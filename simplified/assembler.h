@@ -9,45 +9,6 @@
 
 namespace xcgd {
 
-class HelmholtzPhysics {
- public:
-  HelmholtzPhysics(double r) : r(r) {}
-
-  static constexpr int spatial_dim = 2;
-  static constexpr int dof_per_node = 1;
-
-  template <typename T>
-  using location_t = A2D::Vec<T, 2>;
-
-  template <typename T>
-  using normal_t = A2D::Vec<T, 2>;
-
-  template <typename T>
-  using input_t = A2D::Vec<T, 1>;
-
-  template <typename T>
-  using gradient_t = A2D::Vec<T, 2>;
-
-  template <typename T>
-  T energy(T& weight, location_t<T>& xloc, normal_t<T>& normal, input_t<T>& val,
-           gradient_t<T>& grad) const {
-    return 0.5 * weight *
-           (val[0] * val[0] + r * r * (grad[0] * grad[0] + grad[1] * grad[1]));
-  }
-
-  template <typename T>
-  void residual(T weight, location_t<T>& xloc, normal_t<T>& normal,
-                input_t<T>& val, gradient_t<T>& grad, input_t<T>& val_res,
-                gradient_t<T>& grad_res) const {
-    val_res = weight * val[0];
-    grad_res[0] = weight * r * r * grad[0];
-    grad_res[1] = weight * r * r * grad[1];
-  }
-
- private:
-  double r;
-};
-
 template <typename T>
 class MeshAssemblerBase {
  public:
@@ -74,32 +35,33 @@ class Assembler {
     num_dof = 0;
     for (int i = 0; i < assemblers.size(); i++) {
       int index = assemblers[i]->get_max_dof_index();
-      num_dof = std::max(index + 1, num_dof);
+      num_dof = std::max(index, num_dof);
     }
 
     dof.resize(num_dof);
     res.resize(num_dof);
 
+    // Build the non-zero pattern
+    pattern_builder.initialize(num_dof);
     pattern_builder.begin_count();
-
     for (int i = 0; i < assemblers.size(); i++) {
       assemblers[i]->add_row_counts(pattern_builder);
     }
 
     pattern_builder.begin_fill();
-
     for (int i = 0; i < assemblers.size(); i++) {
       assemblers[i]->insert_columns(pattern_builder);
     }
 
+    // Finalize the CSR pattern
     pattern_builder.finalize(csr);
   }
 
   std::vector<T>& get_dof() { return dof; }
   std::vector<T>& get_residual() { return res; }
-  CSRMat<T>& get_csr() { return csr; }
+  CSRMat<T>& get_jacobian() { return csr; }
 
-  T energy() const {
+  T eval_energy() const {
     T total_energy = 0.0;
     for (int i = 0; i < assemblers.size(); i++) {
       total_energy += assemblers[i]->energy(dof);
@@ -107,14 +69,14 @@ class Assembler {
     return total_energy;
   }
 
-  void residual() {
+  void eval_residual() {
     std::fill(res.begin(), res.end(), T(0));
     for (int i = 0; i < assemblers.size(); i++) {
       assemblers[i]->add_residual(dof, res);
     }
   }
 
-  void jacobian() {
+  void eval_jacobian() {
     csr.zero();
     for (int i = 0; i < assemblers.size(); i++) {
       assemblers[i]->add_jacobian(dof, csr);
@@ -137,8 +99,13 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   static constexpr int dof_per_node = Physics::dof_per_node;
   static constexpr int spatial_dim = Physics::spatial_dim;
 
-  MeshAssembler(MeshBase<T>& mesh, Physics& physics)
+  MeshAssembler(std::shared_ptr<MeshBase<T>> mesh, const Physics& physics)
       : mesh(mesh), physics(physics) {}
+  ~MeshAssembler() {}
+
+  int get_max_dof_index() const {
+    return dof_per_node * mesh->get_max_node_index();
+  }
 
   /**
    * @brief Compute the energy
@@ -150,8 +117,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     T total_energy = 0.0;
 
     // Query the max nodes and max quadrature points
-    int max_nodes = mesh.get_max_num_nodes();
-    int max_quad_pts = mesh.get_max_num_quadrature_points();
+    int max_nodes = mesh->get_max_num_nodes();
+    int max_quad_pts = mesh->get_max_num_quadrature_points();
 
     // Arrays for the node numbers
     std::vector<int> nodes(max_nodes);
@@ -164,21 +131,21 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     std::vector<T> normals(spatial_dim * max_quad_pts);
 
     // Arrays for storing the basis functions and derivatives
-    std::vector<T> N(max_nodes * max_quad_pts);
-    std::vector<T> Nx(spatial_dim * max_nodes * max_quad_pts);
+    std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
 
-    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
       // Get the node numbers and locations associated with the element
-      int num_nodes = mesh.get_nodes(elem, nodes);
+      int num_nodes = mesh->get_nodes(elem, nodes);
 
       // Get the quadrature weights and points associated with the element
-      int num_quad_points = mesh.get_quadrature(elem, weights, points, normals);
+      int num_quad_points =
+          mesh->get_quadrature(elem, weights, points, normals);
 
       // Evaluate the basis at all the quadrature points
-      mesh.eval_basis(elem, num_quad_points, points, N, Nx);
+      mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh.get_node_points(elem, X);
+      mesh->get_node_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -190,8 +157,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         typename Physics::template input_t<T> vals;
         typename Physics::template gradient_t<T> grad;
 
-        const T* Nptr = &N[i * num_nodes];
-        const T* Nxptr = &Nx[i * spatial_dim * num_nodes];
+        const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 2) * num_nodes * i];
 
         for (int k = 0; k < spatial_dim; k++) {
           normal[k] = normals[i * spatial_dim + k];
@@ -214,10 +181,10 @@ class MeshAssembler : public MeshAssemblerBase<T> {
    * @param dof Input degrees of freedom
    * @param res Residual value
    */
-  void add_residual(const std::vector<T>& dof, std::vector<T>& res) {
+  void add_residual(const std::vector<T>& dof, std::vector<T>& res) const {
     // Query the max nodes and max quadrature points
-    int max_nodes = mesh.get_max_num_nodes();
-    int max_quad_pts = mesh.get_max_num_quadrature_points();
+    int max_nodes = mesh->get_max_num_nodes();
+    int max_quad_pts = mesh->get_max_num_quadrature_points();
 
     // Arrays for the node numbers
     std::vector<int> nodes(max_nodes);
@@ -231,27 +198,28 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     std::vector<T> normals(spatial_dim * max_quad_pts);
 
     // Arrays for storing the basis functions and derivatives
-    std::vector<T> N(max_nodes * max_quad_pts);
-    std::vector<T> Nx(spatial_dim * max_nodes * max_quad_pts);
+    std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
 
-    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
       // Get the node numbers and locations associated with the element
-      int num_nodes = mesh.get_nodes(elem, nodes);
+      int num_nodes = mesh->get_nodes(elem, nodes);
 
       // Get the quadrature weights and points associated with the element
-      int num_quad_points = mesh.get_quadrature(elem, weights, points, normals);
+      int num_quad_points =
+          mesh->get_quadrature(elem, weights, points, normals);
 
       // Evaluate the basis at all the quadrature points
-      mesh.eval_basis(elem, num_quad_points, points, N, Nx);
+      std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
 
       // Get the node locations
-      mesh.get_node_points(elem, X);
+      mesh->get_node_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
 
       // Fill the element zeros in
-      std::fill(elem_res, elem_res + dof_per_node * num_nodes, T(0));
+      std::fill(elem_res.begin(), elem_res.begin() + dof_per_node * num_nodes,
+                T(0));
 
       // Perform the quadrature
       for (int i = 0; i < num_quad_points; i++) {
@@ -265,8 +233,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         for (int k = 0; k < spatial_dim; k++) {
           normal[k] = normals[i * spatial_dim + k];
         }
-        const T* Nptr = &N[i * num_nodes];
-        const T* Nxptr = &Nx[i * spatial_dim * num_nodes];
+        const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 2) * num_nodes * i];
 
         interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
         interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
@@ -285,8 +253,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
   void add_jacobian(const std::vector<T>& dof, CSRMat<T>& csr) const {
     // Query the max nodes and max quadrature points
-    int max_nodes = mesh.get_max_num_nodes();
-    int max_quad_pts = mesh.get_max_num_quadrature_points();
+    int max_nodes = mesh->get_max_num_nodes();
+    int max_quad_pts = mesh->get_max_num_quadrature_points();
 
     // Arrays for the node numbers
     std::vector<int> nodes(max_nodes);
@@ -301,21 +269,21 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     std::vector<T> normals(spatial_dim * max_quad_pts);
 
     // Arrays for storing the basis functions and derivatives
-    std::vector<T> N(max_nodes * max_quad_pts);
-    std::vector<T> Nx(spatial_dim * max_nodes * max_quad_pts);
+    std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
 
-    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
       // Get the node numbers and locations associated with the element
-      int num_nodes = mesh.get_nodes(elem, nodes);
+      int num_nodes = mesh->get_nodes(elem, nodes);
 
       // Get the quadrature weights and points associated with the element
-      int num_quad_points = mesh.get_quadrature(elem, weights, points, normals);
+      int num_quad_points =
+          mesh->get_quadrature(elem, weights, points, normals);
 
       // Evaluate the basis at all the quadrature points
-      mesh.eval_basis(elem, num_quad_points, points, N, Nx);
+      mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh.get_node_points(elem, X);
+      mesh->get_node_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -337,8 +305,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         for (int k = 0; k < spatial_dim; k++) {
           normal[k] = normals[i * spatial_dim + k];
         }
-        const T* Nptr = &N[i * num_nodes];
-        const T* Nxptr = &Nx[i * spatial_dim * num_nodes];
+        const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 2) * num_nodes * i];
 
         interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
         interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
@@ -386,11 +354,11 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         }
 
         add_jac_values(dof_per_node, num_nodes, Nptr, jac_vv, elem_jac);
-        add_jac_values_gradient(dof_per_node, num_nodes, Nptr, Nxprt, jac_vg,
+        add_jac_values_gradient(dof_per_node, num_nodes, Nptr, Nxptr, jac_vg,
                                 elem_jac);
-        add_jac_gradient_values(dof_per_node, num_nodes, Nptr, Nxprt, jac_gv,
+        add_jac_gradient_values(dof_per_node, num_nodes, Nptr, Nxptr, jac_gv,
                                 elem_jac);
-        add_jac_gradient(dof_per_node, num_nodes, Nxprt, jac_gg, elem_jac);
+        add_jac_gradient(dof_per_node, num_nodes, Nxptr, jac_gg, elem_jac);
       }
 
       add_element_jacobian(num_nodes, nodes, elem_jac, csr);
@@ -398,13 +366,13 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   }
 
   void add_row_counts(CSRPatternBuilder& pattern_builder) const {
-    int max_nodes = mesh.get_max_num_nodes();
+    int max_nodes = mesh->get_max_num_nodes();
     std::vector<int> nodes(max_nodes);
     std::vector<int> elem_dofs(dof_per_node * max_nodes);
 
     // Pass 1: count approximate row insertions
-    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
-      int num_nodes = mesh.get_nodes(elem, nodes);
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
+      int num_nodes = mesh->get_nodes(elem, nodes);
 
       const int num_elem_dofs = dof_per_node * num_nodes;
       fill_element_dofs(num_nodes, nodes, elem_dofs);
@@ -415,12 +383,12 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   }
 
   void insert_columns(CSRPatternBuilder& pattern_builder) const {
-    int max_nodes = mesh.get_max_num_nodes();
+    int max_nodes = mesh->get_max_num_nodes();
     std::vector<int> nodes(max_nodes);
     std::vector<int> elem_dofs(dof_per_node * max_nodes);
 
-    for (int elem = 0; elem < mesh.get_num_elements(); elem++) {
-      int num_nodes = mesh.get_nodes(elem, nodes);
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
+      int num_nodes = mesh->get_nodes(elem, nodes);
 
       const int num_elem_dofs = dof_per_node * num_nodes;
       fill_element_dofs(num_nodes, nodes, elem_dofs);
@@ -431,8 +399,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   }
 
  private:
-  MeshBase<T>& mesh;
-  Physics& physics;
+  std::shared_ptr<MeshBase<T>> mesh;
+  const Physics& physics;
 
   void fill_element_dofs(int num_nodes, const std::vector<int>& nodes,
                          std::vector<int>& elem_dofs) const {
@@ -487,11 +455,10 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       out[k] = 0.0;
     }
 
-    for (int i = 0; i < num_nodes; i++) {
-      for (int k = 0; k < dim; k++) {
-        for (int j = 0; j < spatial_dim; j++) {
-          out[spatial_dim * k + j] +=
-              Nx[spatial_dim * i + j] * vals[dim * i + k];
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < dim; j++) {
+        for (int k = 0; k < num_nodes; k++) {
+          out[i + spatial_dim * j] = Nx[k + i * num_nodes] * vals[dim * k + j];
         }
       }
     }
@@ -512,11 +479,11 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   void add_res_gradient(int dim, int num_nodes, const T* Nx,
                         const GradRes& grad_res,
                         std::vector<T>& elem_res) const {
-    for (int i = 0; i < num_nodes; i++) {
-      for (int k = 0; k < dim; k++) {
-        for (int j = 0; j < spatial_dim; j++) {
-          elem_res[dim * i + k] +=
-              Nx[spatial_dim * i + j] * grad_res[spatial_dim * k + j];
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < dim; j++) {
+        for (int k = 0; k < num_nodes; k++) {
+          elem_res[dim * k + j] +=
+              Nx[k + i * num_nodes] * grad_res[i + spatial_dim * j];
         }
       }
     }
@@ -597,7 +564,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
             for (int n = 0; n < spatial_dim; n++) {
               const int gb = spatial_dim * b + n;
 
-              value += jac_vg[gdim * a + gb] * Nx[spatial_dim * j + n];
+              value += jac_vg[gdim * a + gb] * Nx[n * num_nodes + j];
             }
 
             elem_jac[nd * row + col] += N[i] * value;
@@ -625,7 +592,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
             for (int m = 0; m < spatial_dim; m++) {
               const int ga = spatial_dim * a + m;
 
-              value += Nx[spatial_dim * i + m] * jac_gv[dim * ga + b];
+              value += Nx[m * num_nodes + i] * jac_gv[dim * ga + b];
             }
 
             elem_jac[nd * row + col] += value * N[j];
@@ -656,8 +623,8 @@ class MeshAssembler : public MeshAssemblerBase<T> {
               for (int n = 0; n < spatial_dim; n++) {
                 const int gb = spatial_dim * b + n;
 
-                value += Nx[spatial_dim * i + m] * jac_gg[gdim * ga + gb] *
-                         Nx[spatial_dim * j + n];
+                value += Nx[m * num_nodes + i] * jac_gg[gdim * ga + gb] *
+                         Nx[n * num_nodes + j];
               }
             }
 

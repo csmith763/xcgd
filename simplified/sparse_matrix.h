@@ -65,12 +65,11 @@ class CSRPatternBuilder {
     csr.cols.resize(csr.rowp[nrows]);
 
     for (int i = 0; i < nrows; i++) {
-      std::copy(csr.rows[i].begin(), csr.rows[i].end(),
-                csr.cols.begin() + csr.rowp[i]);
+      std::copy(rows[i].begin(), rows[i].end(), csr.cols.begin() + csr.rowp[i]);
     }
 
     csr.data.resize(csr.rowp[nrows]);
-    std::fill(csr.data, csr.data + csr.rowp[nrows]);
+    std::fill(csr.data.begin(), csr.data.begin() + csr.rowp[nrows], T(0));
   }
 
  private:
