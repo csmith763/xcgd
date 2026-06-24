@@ -17,7 +17,7 @@ class MeshBase {
   virtual int get_max_num_quadrature_points() const = 0;
   virtual int get_num_elements() const = 0;
 
-  virtual int get_nodes(int elem, std::vector<int>& nodes) = 0;
+  virtual int get_nodes(int elem, std::vector<int>& nodes) const = 0;
   virtual void get_node_points(int elem, std::vector<T>& X) const = 0;
   virtual int get_quadrature(int elem, std::vector<T>& weights,
                              std::vector<T>& points,
@@ -26,6 +26,79 @@ class MeshBase {
                           const std::vector<T>& pts,
                           std::vector<T>& Nd) const = 0;
 };
+
+namespace detail {
+
+struct PolyBasis {
+  template <class T>
+  void operator()(T x, T y, T p[]) const {
+    T xp[4], yp[4];
+    xp[0] = T(1);
+    xp[1] = x;
+    xp[2] = x * xp[1];
+    xp[3] = x * xp[2];
+    yp[0] = T(1);
+    yp[1] = y;
+    yp[2] = y * yp[1];
+    yp[3] = y * yp[2];
+
+    p[0] = T(1);
+    p[1] = xp[1];
+    p[2] = yp[1];
+    p[3] = xp[2];
+    p[4] = xp[1] * yp[1];
+    p[5] = yp[2];
+    p[6] = xp[3];
+    p[7] = xp[2] * yp[1];
+    p[8] = xp[1] * yp[2];
+    p[9] = yp[3];
+    p[10] = xp[3] * yp[1];
+    p[11] = xp[1] * yp[3];
+  }
+};
+
+struct PolyBasisDeriv {
+  template <class T>
+  void operator()(T x, T y, T dx[], T dy[]) const {
+    T xp[4], yp[4];
+    xp[0] = T(1);
+    xp[1] = x;
+    xp[2] = x * xp[1];
+    xp[3] = x * xp[2];
+    yp[0] = T(1);
+    yp[1] = y;
+    yp[2] = y * yp[1];
+    yp[3] = y * yp[2];
+
+    dx[0] = T(0);
+    dx[1] = T(1);
+    dx[2] = T(0);
+    dx[3] = T(2) * xp[1];
+    dx[4] = yp[1];
+    dx[5] = T(0);
+    dx[6] = T(3) * xp[2];
+    dx[7] = T(2) * xp[1] * yp[1];
+    dx[8] = yp[2];
+    dx[9] = T(0);
+    dx[10] = T(3) * xp[2] * yp[1];
+    dx[11] = yp[3];
+
+    dy[0] = T(0);
+    dy[1] = T(0);
+    dy[2] = T(1);
+    dy[3] = T(0);
+    dy[4] = xp[1];
+    dy[5] = T(2) * yp[1];
+    dy[6] = T(0);
+    dy[7] = xp[2];
+    dy[8] = T(2) * xp[1] * yp[1];
+    dy[9] = T(3) * yp[2];
+    dy[10] = xp[3];
+    dy[11] = T(3) * xp[1] * yp[2];
+  }
+};
+
+}  // namespace detail
 
 template <typename T>
 class CartesianMesh : public MeshBase<T> {
@@ -48,6 +121,21 @@ class CartesianMesh : public MeshBase<T> {
     w[3] = (18.0 - sqrt(30.0)) / 36.0;
   }
 
+  // Routines to make this
+  void get_cell_nodes(int elem, std::vector<int>& nodes) const {
+    int i = elem % nx;
+    int j = elem / nx;
+
+    nodes[0] = i + j * (nx + 1);
+    nodes[1] = i + 1 + j * (nx + 1);
+    nodes[2] = i + (j + 1) * (nx + 1);
+    nodes[3] = i + 1 + (j + 1) * (nx + 1);
+  }
+
+  // Get the number of edges
+  int get_num_edges() const { return (nx + 1) * ny + nx * (ny + 1); }
+
+  // Overrides needed to use this as an analysis mesh directly
   int get_max_node_index() const { return (nx + 1) * (ny + 1); }
   int get_max_num_quadrature_points() const {
     return (degree + 1) * (degree + 1);
@@ -55,7 +143,7 @@ class CartesianMesh : public MeshBase<T> {
   int get_max_num_nodes() const { return (degree + 1) * (degree + 1); }
   int get_num_elements() const { return nx * ny; }
 
-  int get_nodes(int elem, std::vector<int>& nodes) {
+  int get_nodes(int elem, std::vector<int>& nodes) const {
     return get_node_numbers(elem, nodes);
   }
   void get_node_points(int elem, std::vector<T>& X) const {
@@ -92,75 +180,42 @@ class CartesianMesh : public MeshBase<T> {
     T x0 = delta * i;
     T y0 = delta * j;
 
-    auto basis = [&](T x, T y, T p[]) {
-      T xp[4], yp[4];
-      xp[0] = T(1);
-      xp[1] = x;
-      xp[2] = x * xp[1];
-      xp[3] = x * xp[2];
-      yp[0] = T(1);
-      yp[1] = y;
-      yp[2] = y * yp[1];
-      yp[3] = y * yp[2];
+    Vandermonde2D interp(x0, y0, delta, nnodes, X, detail::PolyBasis{},
+                         detail::PolyBasisDeriv{});
 
-      p[0] = T(1);
-      p[1] = xp[1];
-      p[2] = yp[1];
-      p[3] = xp[2];
-      p[4] = xp[1] * yp[1];
-      p[5] = yp[2];
-      p[6] = xp[3];
-      p[7] = xp[2] * yp[1];
-      p[8] = xp[1] * yp[2];
-      p[9] = yp[3];
-      p[10] = xp[3] * yp[1];
-      p[11] = xp[1] * yp[3];
-    };
+    interp.eval_basis(num_quad_points, pts.data(), Nd.data());
+  }
 
-    auto basis_deriv = [&](T x, T y, T dx[], T dy[]) {
-      T xp[4], yp[4];
-      xp[0] = T(1);
-      xp[1] = x;
-      xp[2] = x * xp[1];
-      xp[3] = x * xp[2];
-      yp[0] = T(1);
-      yp[1] = y;
-      yp[2] = y * yp[1];
-      yp[3] = y * yp[2];
+  auto create_interp(int elem) const {
+    T X[24];  // nnodes = 12 always for this mesh
+    int nnodes = get_point_locations(elem, X);
 
-      dx[0] = T(0);
-      dx[1] = T(1);
-      dx[2] = T(0);
-      dx[3] = T(2) * xp[1];
-      dx[4] = yp[1];
-      dx[5] = T(0);
-      dx[6] = T(3) * xp[2];
-      dx[7] = T(2) * xp[1] * yp[1];
-      dx[8] = yp[2];
-      dx[9] = T(0);
-      dx[10] = T(3) * xp[2] * yp[1];
-      dx[11] = yp[3];
+    int i = elem % nx;
+    int j = elem / nx;
+    T x0 = delta * i;
+    T y0 = delta * j;
 
-      dy[0] = T(0);
-      dy[1] = T(0);
-      dy[2] = T(1);
-      dy[3] = T(0);
-      dy[4] = xp[1];
-      dy[5] = T(2) * yp[1];
-      dy[6] = T(0);
-      dy[7] = xp[2];
-      dy[8] = T(2) * xp[1] * yp[1];
-      dy[9] = T(3) * yp[2];
-      dy[10] = xp[3];
-      dy[11] = T(3) * xp[1] * yp[2];
-    };
-
-    Vandermonde2D interp(x0, y0, delta, nnodes, X, basis, basis_deriv);
-
-    interp.eval(num_quad_points, pts.data(), Nd.data());
+    return Vandermonde2D(x0, y0, delta, nnodes, X, detail::PolyBasis{},
+                         detail::PolyBasisDeriv{});
   }
 
  private:
+  template <class ArrayType>
+  int get_point_locations(int elem, ArrayType& X) const {
+    int nodes[12];
+    int nnodes = get_node_numbers(elem, nodes);
+
+    for (int k = 0; k < nnodes; k++) {
+      int i = nodes[k] % (nx + 1);
+      int j = nodes[k] / (nx + 1);
+
+      X[2 * k] = i * delta;
+      X[2 * k + 1] = j * delta;
+    }
+
+    return nnodes;
+  }
+
   template <class ArrayType>
   int get_node_numbers(int elem, ArrayType& array) const {
     int i = elem % nx;
@@ -205,22 +260,6 @@ class CartesianMesh : public MeshBase<T> {
     }
 
     return 12;
-  }
-
-  template <class ArrayType>
-  int get_point_locations(int elem, ArrayType& X) const {
-    int nodes[12];
-    int nnodes = get_node_numbers(elem, nodes);
-
-    for (int k = 0; k < nnodes; k++) {
-      int i = nodes[k] % (nx + 1);
-      int j = nodes[k] / (nx + 1);
-
-      X[2 * k] = i * delta;
-      X[2 * k + 1] = j * delta;
-    }
-
-    return nnodes;
   }
 
  private:

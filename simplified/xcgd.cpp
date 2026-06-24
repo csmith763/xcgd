@@ -3,6 +3,7 @@
 #include <pybind11/stl.h>
 
 #include "assembler.h"
+#include "cut_mesh.h"
 #include "mesh_base.h"
 #include "physics.h"
 
@@ -39,6 +40,17 @@ PYBIND11_MODULE(xcgd, m) {
       .def(py::init<int, int, T>(), py::arg("nx"), py::arg("ny"),
            py::arg("delta"));
 
+  py::class_<xcgd::CartesianCutMesh<T>,
+             std::shared_ptr<xcgd::CartesianCutMesh<T>>>(m, "CartesianCutMesh")
+      .def(py::init<std::shared_ptr<xcgd::CartesianMesh<T>>>())
+      .def("update", &xcgd::CartesianCutMesh<T>::update)
+      .def(
+          "get_lsf",
+          [](xcgd::CartesianCutMesh<T>& self) {
+            return make_vector_view(self.get_lsf(), py::cast(&self));
+          },
+          py::return_value_policy::reference_internal);
+
   // Bind the physics classes
   py::class_<xcgd::HelmholtzPhysics>(m, "Helmholtz")
       .def(py::init<T>(), py::arg("r"));
@@ -63,14 +75,12 @@ PYBIND11_MODULE(xcgd, m) {
             return make_vector_view(self.rowp, py::cast(&self));
           },
           py::return_value_policy::reference_internal)
-
       .def_property_readonly(
           "cols",
           [](xcgd::CSRMat<T>& self) {
             return make_vector_view(self.cols, py::cast(&self));
           },
           py::return_value_policy::reference_internal)
-
       .def_property_readonly(
           "data",
           [](xcgd::CSRMat<T>& self) {
@@ -90,7 +100,6 @@ PYBIND11_MODULE(xcgd, m) {
             return make_vector_view(self.get_dof(), py::cast(&self));
           },
           py::return_value_policy::reference_internal)
-
       .def(
           "get_residual",
           [](xcgd::Assembler<T>& self) {

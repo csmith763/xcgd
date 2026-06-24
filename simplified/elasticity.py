@@ -75,6 +75,18 @@ mass_assembler.eval_jacobian()
 kcsr = stiffness_assembler.get_jacobian()
 mcsr = mass_assembler.get_jacobian()
 
+# Get the x/y coordinates
+X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))
+
+# Compute a level set function
+lsf = 1 - 10 * (X - 0.5) ** 2 + 4 * (Y - 0.125) ** 2
+
+# Set the level set function
+cut_mesh = xd.CartesianCutMesh(mesh)
+cut_mesh.get_lsf()[:] = lsf.flatten()
+
+cut_mesh.update()
+
 # Use the modified data and right-hand-side
 # kmat = am.CSRMat(kcsr.nrows, kcsr.nrows, kcsr.rowp, kcsr.cols, kcsr.data)
 # mmat = am.CSRMat(mcsr.nrows, mcsr.nrows, mcsr.rowp, mcsr.cols, mcsr.data)
@@ -85,8 +97,6 @@ ldl = am.SparseLDL(
     mat, solver_type=am.SolverType.LDL, ustab=0.04, order=am.OrderingType.DEFAULT
 )
 ldl.factor()
-
-X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))
 
 ldl.solve(rhs)
 
