@@ -26,9 +26,6 @@ assembler.eval_residual()
 assembler.eval_jacobian()
 
 jac = assembler.get_jacobian()
-
-print(np.max(jac.data))
-print(np.min(jac.data))
 mat = am.CSRMat(jac.nrows, jac.nrows, jac.rowp, jac.cols, jac.data)
 
 ldl = am.SparseLDL(
@@ -39,7 +36,7 @@ ldl.factor()
 
 X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))
 
-rhs = 1.0 - np.exp(-((X - 0.5) ** 2 + (Y - 0.125) ** 2))
+rhs = 1.0 - np.exp(-((X - 0.5) ** 2 + 4.0 * (Y - 0.125) ** 2))
 rhs = rhs.flatten()
 
 ldl.solve(rhs)
