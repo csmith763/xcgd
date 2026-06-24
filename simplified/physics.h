@@ -97,10 +97,11 @@ class LinearElasticity2D {
     A2D::ADObj<A2D::Mat<T, dof_per_node, spatial_dim>&> grad(grad_input,
                                                              grad_res);
 
-    A2D::ADObj<T> strain_energy, potential, output;
+    A2D::ADObj<T> strain_energy, output;
     A2D::ADObj<A2D::SymMat<T, spatial_dim>> E, S;
 
     if constexpr (!std::is_same_v<BodyForceFunc, std::nullptr_t>) {
+      A2D::ADObj<T> potential;
       A2D::Vec<T, dof_per_node> g = body_force(xloc);
       auto stack = A2D::MakeStack(
           A2D::MatGreenStrain<A2D::GreenStrainType::LINEAR>(grad, E),

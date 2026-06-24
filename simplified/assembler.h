@@ -158,7 +158,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         typename Physics::template gradient_t<T> grad;
 
         const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
-        const T* Nxptr = &Nd[(spatial_dim + 2) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
 
         for (int k = 0; k < spatial_dim; k++) {
           normal[k] = normals[i * spatial_dim + k];
@@ -209,7 +209,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
           mesh->get_quadrature(elem, weights, points, normals);
 
       // Evaluate the basis at all the quadrature points
-      std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
+      mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
       mesh->get_node_points(elem, X);
@@ -234,7 +234,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
           normal[k] = normals[i * spatial_dim + k];
         }
         const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
-        const T* Nxptr = &Nd[(spatial_dim + 2) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
 
         interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
         interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
@@ -306,7 +306,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
           normal[k] = normals[i * spatial_dim + k];
         }
         const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
-        const T* Nxptr = &Nd[(spatial_dim + 2) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
 
         interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
         interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
@@ -458,7 +458,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     for (int i = 0; i < spatial_dim; i++) {
       for (int j = 0; j < dim; j++) {
         for (int k = 0; k < num_nodes; k++) {
-          out[i + spatial_dim * j] = Nx[k + i * num_nodes] * vals[dim * k + j];
+          out[i + spatial_dim * j] += Nx[k + i * num_nodes] * vals[dim * k + j];
         }
       }
     }
@@ -615,7 +615,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
           for (int b = 0; b < dim; b++) {
             const int col = dim * j + b;
 
-            T value = T(0.0);
+            T value = T(0);
 
             for (int m = 0; m < spatial_dim; m++) {
               const int ga = spatial_dim * a + m;

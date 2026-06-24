@@ -11,7 +11,6 @@ delta = Lx / nx
 Ly = (ny / nx) * Lx
 
 r = 0.05
-
 phys = xd.Helmholtz(r)
 mesh = xd.CartesianMesh(nx, ny, delta)
 helmholtz_assembler = xd.HelmholtzAssembler(mesh, phys)
