@@ -22,5 +22,7 @@ TARGET := $(MODULE)$(PYTHON_EXT_SUFFIX)
 
 all: $(TARGET)
 
-$(TARGET): $(SRC)
-	$(CXX) -I$(A2D_INCLUDE_DIR) $(CXXFLAGS) $(LDFLAGS) $< -o $@
+$(TARGET): force
+	$(CXX) -I$(A2D_INCLUDE_DIR) $(CXXFLAGS) $(LDFLAGS) $(SRC) -o $@
+
+force:

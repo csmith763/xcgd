@@ -73,8 +73,8 @@ class CartesianMesh : public MeshBase<T> {
       for (int ii = 0; ii < 4; ii++) {
         int k = ii + 4 * jj;
         weights[k] = T(0.25) * delta * delta * w[ii] * w[jj];
-        points[2 * k] = x0 + (p[ii] + T(1)) / T(2);
-        points[2 * k + 1] = y0 + (p[jj] + T(1)) / T(2);
+        points[2 * k] = x0 + delta * (p[ii] + T(1)) / T(2);
+        points[2 * k + 1] = y0 + delta * (p[jj] + T(1)) / T(2);
         normals[2 * k] = normals[2 * k + 1] = 0.0;
       }
     }
@@ -208,7 +208,7 @@ class CartesianMesh : public MeshBase<T> {
   }
 
   template <class ArrayType>
-  int get_point_locations(int elem, ArrayType X) const {
+  int get_point_locations(int elem, ArrayType& X) const {
     int nodes[12];
     int nnodes = get_node_numbers(elem, nodes);
 

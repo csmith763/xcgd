@@ -343,7 +343,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         }
         for (int j = 0; j < dof_per_node * spatial_dim; j++) {
           for (int k = 0; k < dof_per_node; k++) {
-            jac_gv[k + j * dof_per_node * spatial_dim] = grad_res[j].deriv[k];
+            jac_gv[k + j * dof_per_node] = grad_res[j].deriv[k];
           }
         }
         for (int j = 0; j < dof_per_node * spatial_dim; j++) {

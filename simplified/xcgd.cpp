@@ -16,6 +16,13 @@ void bind_assembler(py::module_& m, const std::string& name) {
            py::arg("mesh"), py::arg("physics"));
 }
 
+template <typename T>
+py::array_t<T> make_vector_view(std::vector<T>& vec, py::handle base) {
+  return py::array_t<T>({static_cast<py::ssize_t>(vec.size())},
+                        {static_cast<py::ssize_t>(sizeof(T))}, vec.data(),
+                        base);
+}
+
 PYBIND11_MODULE(xcgd, m) {
   using T = double;
 
@@ -43,8 +50,55 @@ PYBIND11_MODULE(xcgd, m) {
   bind_assembler<T, xcgd::LinearElasticity2D<>>(m,
                                                 "LinearElasticity2DAssembler");
 
+  py::class_<xcgd::CSRMat<T>, std::shared_ptr<xcgd::CSRMat<T>>>(m, "CSRMat")
+      .def("zero", &xcgd::CSRMat<T>::zero)
+      .def_readonly("nrows", &xcgd::CSRMat<T>::nrows)
+      .def_property_readonly(
+          "rowp",
+          [](xcgd::CSRMat<T>& self) {
+            return make_vector_view(self.rowp, py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+
+      .def_property_readonly(
+          "cols",
+          [](xcgd::CSRMat<T>& self) {
+            return make_vector_view(self.cols, py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+
+      .def_property_readonly(
+          "data",
+          [](xcgd::CSRMat<T>& self) {
+            return make_vector_view(self.data, py::cast(&self));
+          },
+          py::return_value_policy::reference_internal);
+
   py::class_<xcgd::Assembler<T>, std::shared_ptr<xcgd::Assembler<T>>>(
       m, "Assembler")
       .def(py::init<std::vector<std::shared_ptr<xcgd::MeshAssemblerBase<T>>>>(),
-           py::arg("assemblers"));
+           py::arg("assemblers"))
+      .def("update", &xcgd::Assembler<T>::update)
+      .def(
+          "get_dof",
+          [](xcgd::Assembler<T>& self) {
+            return make_vector_view(self.get_dof(), py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+
+      .def(
+          "get_residual",
+          [](xcgd::Assembler<T>& self) {
+            return make_vector_view(self.get_residual(), py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+      .def(
+          "get_jacobian",
+          [](xcgd::Assembler<T>& self) -> xcgd::CSRMat<T>& {
+            return self.get_jacobian();
+          },
+          py::return_value_policy::reference_internal)
+      .def("eval_energy", &xcgd::Assembler<T>::eval_energy)
+      .def("eval_residual", &xcgd::Assembler<T>::eval_residual)
+      .def("eval_jacobian", &xcgd::Assembler<T>::eval_jacobian);
 }

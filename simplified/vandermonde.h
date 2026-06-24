@@ -126,7 +126,6 @@ class Vandermonde2D {
 
   void eval(int num_points, const T* pts, T* Nd) const {
     const int block_size = 3 * num_nodes;
-
     const T inv = 1.0 / delta;
     for (int q = 0; q < num_points; q++) {
       const T x = (pts[2 * q] - x0) / delta;
