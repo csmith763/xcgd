@@ -127,6 +127,43 @@ class LinearElasticity2D {
   BodyForceFunc body_force;
 };
 
+class ElasticityMass2D {
+ public:
+  ElasticityMass2D(double rho) : rho(rho) {}
+
+  static constexpr int spatial_dim = 2;
+  static constexpr int dof_per_node = 2;
+
+  template <typename T>
+  using location_t = A2D::Vec<T, spatial_dim>;
+
+  template <typename T>
+  using normal_t = A2D::Vec<T, spatial_dim>;
+
+  template <typename T>
+  using input_t = A2D::Vec<T, dof_per_node>;
+
+  template <typename T>
+  using gradient_t = A2D::Mat<T, dof_per_node, spatial_dim>;
+
+  template <typename T>
+  T energy(T& weight, location_t<T>& xloc, normal_t<T>& normal, input_t<T>& val,
+           gradient_t<T>& grad) const {
+    return 0.5 * weight * rho * (val[0] * val[0] + val[1] * val[1]);
+  }
+
+  template <typename T>
+  void residual(T weight, location_t<T>& xloc, normal_t<T>& normal,
+                input_t<T>& val_input, gradient_t<T>& grad_input,
+                input_t<T>& val_res, gradient_t<T>& grad_res) const {
+    val_res[0] = weight * rho * val_input[0];
+    val_res[1] = weight * rho * val_input[1];
+  }
+
+ private:
+  double rho;
+};
+
 }  // namespace xcgd
 
 #endif  // XCGD_PHYSICS_H

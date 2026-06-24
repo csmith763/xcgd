@@ -44,12 +44,16 @@ PYBIND11_MODULE(xcgd, m) {
       .def(py::init<T>(), py::arg("r"));
   py::class_<xcgd::LinearElasticity2D<>>(m, "LinearElasticity2D")
       .def(py::init<T, T>(), py::arg("E"), py::arg("nu"));
+  py::class_<xcgd::ElasticityMass2D>(m, "ElasticityMass2D")
+      .def(py::init<T>(), py::arg("rho"));
 
   // Bind the different physics that is needed
   bind_assembler<T, xcgd::HelmholtzPhysics>(m, "HelmholtzAssembler");
   bind_assembler<T, xcgd::LinearElasticity2D<>>(m,
                                                 "LinearElasticity2DAssembler");
+  bind_assembler<T, xcgd::ElasticityMass2D>(m, "ElasticityMass2DAssembler");
 
+  // Wrapper for the CSR matrix
   py::class_<xcgd::CSRMat<T>, std::shared_ptr<xcgd::CSRMat<T>>>(m, "CSRMat")
       .def("zero", &xcgd::CSRMat<T>::zero)
       .def_readonly("nrows", &xcgd::CSRMat<T>::nrows)
@@ -74,6 +78,7 @@ PYBIND11_MODULE(xcgd, m) {
           },
           py::return_value_policy::reference_internal);
 
+  // Wrapper for the assembler class
   py::class_<xcgd::Assembler<T>, std::shared_ptr<xcgd::Assembler<T>>>(
       m, "Assembler")
       .def(py::init<std::vector<std::shared_ptr<xcgd::MeshAssemblerBase<T>>>>(),
