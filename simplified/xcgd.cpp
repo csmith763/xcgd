@@ -3,8 +3,8 @@
 #include <pybind11/stl.h>
 
 #include "assembler.h"
+#include "cartesian_mesh.h"
 #include "cut_mesh.h"
-#include "mesh_base.h"
 #include "physics.h"
 
 namespace py = pybind11;
@@ -49,7 +49,13 @@ PYBIND11_MODULE(xcgd, m) {
           [](xcgd::CartesianCutMesh<T>& self) {
             return make_vector_view(self.get_lsf(), py::cast(&self));
           },
-          py::return_value_policy::reference_internal);
+          py::return_value_policy::reference_internal)
+      .def("create_interior_mesh",
+           &xcgd::CartesianCutMesh<T>::create_interior_mesh)
+      .def("create_exterior_mesh",
+           &xcgd::CartesianCutMesh<T>::create_exterior_mesh)
+      .def("create_interface_mesh",
+           &xcgd::CartesianCutMesh<T>::create_interface_mesh);
 
   // Bind the physics classes
   py::class_<xcgd::HelmholtzPhysics>(m, "Helmholtz")

@@ -177,8 +177,7 @@ class Vandermonde2D {
       T* px = &Nd[block_size * q + num_nodes];
       T* py = &Nd[block_size * q + 2 * num_nodes];
 
-      basis(x, y, p);
-      deriv(x, y, px, py);
+      deriv(x, y, p, px, py);
 
       for (int i = 0; i < num_nodes; i++) {
         px[i] *= inv;

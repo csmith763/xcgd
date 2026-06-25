@@ -51,35 +51,37 @@ def apply_boundary_conditions(nx, ny, csr):
 Lx = 1.0
 
 nx = 128
-ny = 32
+ny = 128
 delta = Lx / nx
 Ly = (ny / nx) * Lx
 mesh = xd.CartesianMesh(nx, ny, delta)
 
+radius = 1.0 / 3.0
+
 E, nu, rho = 70.0e3, 0.3, 1.0
 elas = xd.LinearElasticity2D(E, nu)
 mass = xd.ElasticityMass2D(rho)
-stiffness_assembler = xd.Assembler([xd.LinearElasticity2DAssembler(mesh, elas)])
-mass_assembler = xd.Assembler([xd.ElasticityMass2DAssembler(mesh, mass)])
+# stiffness_assembler = xd.Assembler([xd.LinearElasticity2DAssembler(mesh, elas)])
+# mass_assembler = xd.Assembler([xd.ElasticityMass2DAssembler(mesh, mass)])
 
-# Update the CSR nonzero pattern and DOF data. This
-# is required after any connectivity change
-stiffness_assembler.update()
-mass_assembler.update()
+# # Update the CSR nonzero pattern and DOF data. This
+# # is required after any connectivity change
+# stiffness_assembler.update()
+# mass_assembler.update()
 
-# # Evaluate the residual and the Jacobian
-stiffness_assembler.eval_jacobian()
-mass_assembler.eval_jacobian()
+# # # Evaluate the residual and the Jacobian
+# stiffness_assembler.eval_jacobian()
+# mass_assembler.eval_jacobian()
 
-# Retrieve the Jacobian we just computed
-kcsr = stiffness_assembler.get_jacobian()
-mcsr = mass_assembler.get_jacobian()
+# # Retrieve the Jacobian we just computed
+# kcsr = stiffness_assembler.get_jacobian()
+# mcsr = mass_assembler.get_jacobian()
 
 # Get the x/y coordinates
 X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))
 
 # Compute a level set function
-lsf = 1 - 10 * (X - 0.5) ** 2 + 4 * (Y - 0.125) ** 2
+lsf = (X - 0.5) ** 2 + (Y - 0.5) ** 2 - radius**2
 
 # Set the level set function
 cut_mesh = xd.CartesianCutMesh(mesh)
@@ -87,31 +89,54 @@ cut_mesh.get_lsf()[:] = lsf.flatten()
 
 cut_mesh.update()
 
+interior_mesh = cut_mesh.create_interior_mesh()
+
+interior_stiffness_assembler = xd.Assembler(
+    [xd.LinearElasticity2DAssembler(interior_mesh, elas)]
+)
+interior_mass_assembler = xd.Assembler(
+    [xd.ElasticityMass2DAssembler(interior_mesh, mass)]
+)
+interior_stiffness_assembler.update()
+interior_mass_assembler.update()
+
+interior_stiffness_assembler.eval_jacobian()
+interior_mass_assembler.eval_jacobian()
+
+kcsr = interior_stiffness_assembler.get_jacobian()
+mcsr = interior_mass_assembler.get_jacobian()
+
+print(np.max(kcsr.data))
+print(np.min(kcsr.data))
+
+print(np.max(mcsr.data))
+print(np.min(mcsr.data))
+
 # Use the modified data and right-hand-side
 # kmat = am.CSRMat(kcsr.nrows, kcsr.nrows, kcsr.rowp, kcsr.cols, kcsr.data)
 # mmat = am.CSRMat(mcsr.nrows, mcsr.nrows, mcsr.rowp, mcsr.cols, mcsr.data)
 
-mat, rhs = apply_boundary_conditions(nx, ny, kcsr)
+# mat, rhs = apply_boundary_conditions(nx, ny, kcsr)
 
-ldl = am.SparseLDL(
-    mat, solver_type=am.SolverType.LDL, ustab=0.04, order=am.OrderingType.DEFAULT
-)
-ldl.factor()
+# ldl = am.SparseLDL(
+#     mat, solver_type=am.SolverType.LDL, ustab=0.04, order=am.OrderingType.DEFAULT
+# )
+# ldl.factor()
 
-ldl.solve(rhs)
+# ldl.solve(rhs)
 
-# Get the dof and set them with the solution
-dof = stiffness_assembler.get_dof()
-dof[:] = rhs
+# # Get the dof and set them with the solution
+# dof = stiffness_assembler.get_dof()
+# dof[:] = rhs
 
-U = rhs[::2].reshape((ny + 1, nx + 1))
-V = rhs[1::2].reshape((ny + 1, nx + 1))
+# U = rhs[::2].reshape((ny + 1, nx + 1))
+# V = rhs[1::2].reshape((ny + 1, nx + 1))
 
-fig, ax = plt.subplots()
-ax.contourf(X + 0.05 * U, Y + 0.05 * V, V)
-ax.set_aspect("equal")
-ax.axis("off")
-fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
-fig.tight_layout(pad=0)
+# fig, ax = plt.subplots()
+# ax.contourf(X + 0.05 * U, Y + 0.05 * V, V)
+# ax.set_aspect("equal")
+# ax.axis("off")
+# fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
+# fig.tight_layout(pad=0)
 
-plt.show()
+# plt.show()
