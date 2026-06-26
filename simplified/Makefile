@@ -8,7 +8,7 @@ PYTHON_EXT_SUFFIX := $(shell python3-config --extension-suffix)
 MODULE := xcgd
 SRC := xcgd.cpp
 
-CXXFLAGS := -g -std=c++17 -fPIC $(PYBIND11_CFLAGS)
+CXXFLAGS := -O3 -std=c++17 -fPIC $(PYBIND11_CFLAGS)
 
 ifeq ($(shell uname),Darwin)
   LDFLAGS := -bundle -undefined dynamic_lookup -framework Accelerate

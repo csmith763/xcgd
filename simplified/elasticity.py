@@ -56,26 +56,12 @@ delta = Lx / nx
 Ly = (ny / nx) * Lx
 mesh = xd.CartesianMesh(nx, ny, delta)
 
+# Set up the problem radius
 radius = 1.0 / 3.0
 
 E, nu, rho = 70.0e3, 0.3, 1.0
 elas = xd.LinearElasticity2D(E, nu)
 mass = xd.ElasticityMass2D(rho)
-# stiffness_assembler = xd.Assembler([xd.LinearElasticity2DAssembler(mesh, elas)])
-# mass_assembler = xd.Assembler([xd.ElasticityMass2DAssembler(mesh, mass)])
-
-# # Update the CSR nonzero pattern and DOF data. This
-# # is required after any connectivity change
-# stiffness_assembler.update()
-# mass_assembler.update()
-
-# # # Evaluate the residual and the Jacobian
-# stiffness_assembler.eval_jacobian()
-# mass_assembler.eval_jacobian()
-
-# # Retrieve the Jacobian we just computed
-# kcsr = stiffness_assembler.get_jacobian()
-# mcsr = mass_assembler.get_jacobian()
 
 # Get the x/y coordinates
 X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))

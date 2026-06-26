@@ -31,15 +31,13 @@ void compute_level_set_quadrature(
 
   auto vol_func = [&](const algvec& x, T w) {
     if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
-      for (int d = 0; d < spatial_dim; d++) {
-        interior_points.push_back(x(d));
-      }
-      interior_weights.push_back(w);
+      interior_points.push_back(x0 + delta * x(0));
+      interior_points.push_back(y0 + delta * x(1));
+      interior_weights.push_back(delta * delta * w);
     } else {
-      for (int d = 0; d < spatial_dim; d++) {
-        exterior_points.push_back(x(d));
-      }
-      exterior_weights.push_back(w);
+      exterior_points.push_back(x0 + delta * x(0));
+      exterior_points.push_back(y0 + delta * x(1));
+      exterior_weights.push_back(delta * delta * w);
     }
   };
   ipquad.integrate(algoim::AutoMixed, degree + 1, vol_func);
@@ -62,11 +60,11 @@ void compute_level_set_quadrature(
       gn(d) = g(d) / nrm;
     }
 
-    for (int d = 0; d < spatial_dim; d++) {
-      interface_points.push_back(x(d));
-      interface_normals.push_back(gn(d));
-    }
-    interface_weights.push_back(w);
+    interface_points.push_back(x0 + delta * x(0));
+    interface_points.push_back(y0 + delta * x(1));
+    interface_normals.push_back(gn(0));
+    interface_normals.push_back(gn(1));
+    interface_weights.push_back(delta * w);
   };
   ipquad.integrate_surf(algoim::AutoMixed, degree + 1, surf_func);
 }

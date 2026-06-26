@@ -537,14 +537,14 @@ class CartesianCutMesh
       T x0, y0, delta;
       mesh->get_element_base_point(elem, x0, y0, delta);
 
-      // if (regular) {
-      //   info.exclude[index] = uint32_t(0);
-      // } else {
-      const int num_points = static_cast<int>(info.stencil[index].size());
+      if (regular) {
+        info.exclude[index] = uint32_t(0);
+      } else {
+        const int num_points = static_cast<int>(info.stencil[index].size());
 
-      info.exclude[index] = compute_exclude_bits_from_points(
-          num_points, x0, y0, delta, info.X[index].data());
-      // }
+        info.exclude[index] = compute_exclude_bits_from_points(
+            num_points, x0, y0, delta, info.X[index].data());
+      }
     }
   }
 
