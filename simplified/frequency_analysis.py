@@ -107,6 +107,58 @@ def create_beam_domain(Lx: float, Ly: float, nx: int, ny: int):
     return conn, X, bcs, forces, non_design_nodes, dvmap, ndvs
 
 
+def plot_level_set(X, Y, lsf, ax=None):
+    """
+    Visualizes the level set function over the mesh.
+
+    The filled contours show the value of the level set function, the solid
+    black contour marks the zero level set (the material boundary), and the
+    shaded overlay highlights the solid (interior) region where ``lsf <= 0``.
+
+    Parameters
+    ----------
+    X, Y : np.ndarray
+        Meshgrid coordinate arrays of shape ``(ny + 1, nx + 1)``.
+    lsf : np.ndarray
+        Level set values. May be flat (length ``(nx + 1) * (ny + 1)``) or
+        already shaped like ``X``; it is reshaped to match ``X`` as needed.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on. A new figure/axes is created if not provided.
+
+    Returns
+    -------
+    fig, ax : the matplotlib figure and axes containing the plot.
+    """
+
+    # Reshape the level set to match the coordinate grid if needed
+    phi = np.asarray(lsf).reshape(X.shape)
+
+    # Create the axes if one was not provided
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.figure
+
+    # Filled contours of the level set field
+    cf = ax.contourf(X, Y, phi, levels=50, cmap="RdBu_r")
+    fig.colorbar(cf, ax=ax, label=r"$\phi$")
+
+    # # Highlight the solid region (phi <= 0)
+    # ax.contourf(
+    #     X, Y, phi, levels=[phi.min(), 0.0], colors=["#999999"], alpha=0.4
+    # )
+
+    # Mark the zero level set (material boundary)
+    ax.contour(X, Y, phi, levels=[0.0], colors="black", linewidths=1.5)
+
+    ax.set_aspect("equal")
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title("Level Set Function")
+
+    return fig, ax
+
+
 def plot_frequencies_and_rel_error(lam_gd_nz, lam_nz):
     """
     Constructs a figure where the first subplot is a bar plot showing the actual values for the frequencies contained in the two arrays (one from Galerkin difference, the other from the conventional finite element method). The second subplot shows the relative error for each mode number.
@@ -159,6 +211,82 @@ if __name__ == "__main__":
     # Set the plot style
     plt.style.use(niceplots.get_style())
     plt.rcParams["font.family"] = "helvetica"
+
+    Lx = 3.0
+
+    # nx = 256
+    # ny = 256
+    # nx = 128
+    # ny = 128
+    # nx = 64
+    # ny = 64
+    # nx = 32
+    # ny = 32
+
+    nx = 8
+    ny = 8
+
+    delta = Lx / nx
+    Ly = (ny / nx) * Lx
+    mesh = xd.CartesianMesh(nx, ny, delta)
+
+    # Set up the problem radius
+    radius = 1.0
+
+    E, nu, rho = 1.0, 0.3, 1.0
+    elas = xd.LinearElasticity2D(E, nu)
+    mass = xd.ElasticityMass2D(rho)
+
+    # Get the x/y coordinates
+    X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))
+
+    # Compute a level set function
+    lsf = (X - 0.5 * Lx) ** 2 + (Y - 0.5 * Ly) ** 2 - radius**2
+
+    # Visualize the level set function
+    plot_level_set(X, Y, lsf)
+    plt.show()
+
+    # Set the level set function
+    cut_mesh = xd.CartesianCutMesh(mesh)
+    cut_mesh.get_lsf()[:] = lsf.flatten()
+
+    cut_mesh.update()
+
+    X = cut_mesh.get_node_locations()
+    ic(X.shape)
+
+    exit()
+
+    interior_mesh = cut_mesh.create_interior_mesh()
+
+    stiffness_assembler = xd.Assembler(
+        [xd.LinearElasticity2DAssembler(interior_mesh, elas)]
+    )
+    mass_assembler = xd.Assembler([xd.ElasticityMass2DAssembler(interior_mesh, mass)])
+
+    # Solve the frequency problem using the Galerkin-difference approach
+    N = 40
+    sigma = -0.1
+    solver_type = "IRAM"
+    eig_atol = 1e-10
+    tol = 1e-14
+
+    lam_gd, _ = solve_frequency_problem(
+        stiffness_assembler=stiffness_assembler,
+        mass_assembler=mass_assembler,
+        sigma=sigma,
+        N=N,
+        eig_atol=eig_atol,
+        tol=tol,
+    )
+
+    frequencies = np.sqrt(np.abs(lam_gd))
+
+    for i, freq in enumerate(frequencies[3:]):
+        print(f"{i:2d}: {freq:20.12f}")
+
+    exit()
 
     # Construct the Cartesian mesh
     Lx = 1.0
