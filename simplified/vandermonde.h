@@ -124,7 +124,49 @@ class Vandermonde2D {
     detail::Lapack<T>::getrf(num_nodes, V.data(), ipiv.data());
   }
 
-  void eval(int num_points, const T* pts, T* Nd) const {
+  void get_base_data(T& x0_, T& y0_, T& delta_) {
+    x0_ = x0;
+    y0_ = y0;
+    delta_ = delta;
+  }
+
+  /**
+   * @brief Evaluate the value of an interpolation at the given point
+   *
+   * @param pt The x and y location to evaluate
+   * @param vals The value at the node locations
+   * @return T
+   */
+
+  T eval(const T* pt, const T* vals) const {
+    std::vector<T> N(num_nodes);
+
+    T x = (pt[0] - x0) / delta;
+    T y = (pt[1] - y0) / delta;
+
+    basis(x, y, N.data());
+
+    int nrhs = 1;
+    detail::Lapack<T>::getrs('N', num_nodes, nrhs, V.data(), ipiv.data(),
+                             N.data());
+
+    T value = 0.0;
+    for (int i = 0; i < num_nodes; i++) {
+      value += N[i] * vals[i];
+    }
+
+    return value;
+  }
+
+  /**
+   * @brief Return the basis functions and derivatives evaluated at all of the
+   * specified points.
+   *
+   * @param num_points The number of point
+   * @param pts The x and y locations of the 2D points
+   * @param Nd The basis functions and their x and y derivatives at each point
+   */
+  void eval_basis(int num_points, const T* pts, T* Nd) const {
     const int block_size = 3 * num_nodes;
     const T inv = 1.0 / delta;
     for (int q = 0; q < num_points; q++) {
@@ -135,8 +177,7 @@ class Vandermonde2D {
       T* px = &Nd[block_size * q + num_nodes];
       T* py = &Nd[block_size * q + 2 * num_nodes];
 
-      basis(x, y, p);
-      deriv(x, y, px, py);
+      deriv(x, y, p, px, py);
 
       for (int i = 0; i < num_nodes; i++) {
         px[i] *= inv;
