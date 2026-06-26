@@ -44,6 +44,7 @@ PYBIND11_MODULE(xcgd, m) {
              std::shared_ptr<xcgd::CartesianCutMesh<T>>>(m, "CartesianCutMesh")
       .def(py::init<std::shared_ptr<xcgd::CartesianMesh<T>>>())
       .def("update", &xcgd::CartesianCutMesh<T>::update)
+      .def("update_derivatives", &xcgd::CartesianCutMesh<T>::update_derivatives)
       .def(
           "get_lsf",
           [](xcgd::CartesianCutMesh<T>& self) {
@@ -113,12 +114,24 @@ PYBIND11_MODULE(xcgd, m) {
           },
           py::return_value_policy::reference_internal)
       .def(
+          "get_adjoint",
+          [](xcgd::Assembler<T>& self) {
+            return make_vector_view(self.get_adjoint(), py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+      .def(
+          "get_dfdx",
+          [](xcgd::Assembler<T>& self) {
+            return make_vector_view(self.get_dfdx(), py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+      .def(
           "get_jacobian",
           [](xcgd::Assembler<T>& self) -> xcgd::CSRMat<T>& {
             return self.get_jacobian();
           },
           py::return_value_policy::reference_internal)
-      .def("eval_energy", &xcgd::Assembler<T>::eval_energy)
+      .def("eval_functional", &xcgd::Assembler<T>::eval_functional)
       .def("eval_residual", &xcgd::Assembler<T>::eval_residual)
       .def("eval_jacobian", &xcgd::Assembler<T>::eval_jacobian);
 }

@@ -73,7 +73,7 @@ class CartesianCutMesh
     }
   }
 
-  int get_max_num_nodes(CutDomain domain) const {
+  int get_max_element_nodes(CutDomain domain) const {
     if (domain == CutDomain::INTERIOR_VOLUME ||
         domain == CutDomain::EXTERIOR_VOLUME) {
       return detail::PolyBasis2D::MAX_BASIS;
@@ -253,6 +253,66 @@ class CartesianCutMesh
     }
   }
 
+  // The nodes on underlying Cartesian are the design variables
+  int get_max_design_index() const { return mesh->get_max_node_index(); }
+
+  int get_max_element_design_vars() const {
+    return mesh->get_max_element_nodes();
+  }
+
+  int get_quadrature_derivative(CutDomain domain, int elem,
+                                std::vector<T>& dwdx, std::vector<T>& dpdx,
+                                std::vector<T>& dndx, int& ndvs,
+                                std::vector<int>& dvs) const {
+    ndvs = 0;
+    if (domain == CutDomain::INTERIOR_VOLUME) {
+      if (elem >= num_interior) {
+        // Copy the derivative of the weights/point wrt. design variables
+        int k = elem - num_interior;
+        dwdx.assign(interior_weights_jacobian[k].begin(),
+                    interior_weights_jacobian[k].end());
+        dpdx.assign(interior_points_jacobian[k].begin(),
+                    interior_points_jacobian[k].end());
+
+        // Set the desgin variable indices (nodes from the underlying mesh)
+        int index = interface_elems[k];
+        ndvs = mesh->get_nodes(index, dvs);
+
+        return static_cast<int>(interior_weights[k].size());
+      }
+    } else if (domain == CutDomain::EXTERIOR_VOLUME) {
+      if (elem >= num_exterior) {
+        // Copy the derivative of the weights/point wrt. design variables
+        int k = elem - num_exterior;
+        dwdx.assign(exterior_weights_jacobian[k].begin(),
+                    exterior_weights_jacobian[k].end());
+        dpdx.assign(exterior_points_jacobian[k].begin(),
+                    exterior_points_jacobian[k].end());
+
+        // Set the desgin variable indices (nodes from the underlying mesh)
+        int index = interface_elems[k];
+        ndvs = mesh->get_nodes(index, dvs);
+
+        return static_cast<int>(exterior_weights[k].size());
+      }
+    } else {
+      dwdx.assign(interface_weights_jacobian[elem].begin(),
+                  interface_weights_jacobian[elem].end());
+      dpdx.assign(interface_points_jacobian[elem].begin(),
+                  interface_points_jacobian[elem].end());
+      dndx.assign(interface_normals_jacobian[elem].begin(),
+                  interface_normals_jacobian[elem].end());
+
+      // Set the desgin variable indices (nodes from the underlying mesh)
+      ndvs = mesh->get_nodes(elem, dvs);
+
+      return static_cast<int>(interface_weights.size());
+    }
+
+    // Only interface elements contribute derivatives directly
+    return 0;
+  }
+
   std::vector<T>& get_lsf() { return lsf; }
 
   void update() {
@@ -362,6 +422,51 @@ class CartesianCutMesh
     update_stencil(interface_exterior, exterior_node_map, interface_elems);
   }
 
+  void update_derivatives() {
+    int num_interface = interface_elems.size();
+    interior_points_jacobian.resize(num_interface);
+    interior_weights_jacobian.resize(num_interface);
+
+    exterior_points_jacobian.resize(num_interface);
+    exterior_weights_jacobian.resize(num_interface);
+
+    interface_points_jacobian.resize(num_interface);
+    interface_weights_jacobian.resize(num_interface);
+    interface_normals_jacobian.resize(num_interface);
+
+    // Local info about the level set
+    std::vector<int> elem_nodes(mesh->get_max_element_nodes());
+    std::vector<T> elem_lsf(mesh->get_max_element_nodes());
+
+    for (int i = 0; i < num_interface; i++) {
+      interior_points_jacobian[i].clear();
+      interior_weights_jacobian[i].clear();
+      exterior_points_jacobian[i].clear();
+      exterior_weights_jacobian[i].clear();
+      interface_points_jacobian[i].clear();
+      interface_weights_jacobian[i].clear();
+      interface_normals_jacobian[i].clear();
+
+      int elem = interface_elems[i];
+
+      // Get the lsf at the nodes
+      int nnodes = mesh->get_nodes(elem, elem_nodes);
+      for (int j = 0; j < nnodes; j++) {
+        elem_lsf[j] = lsf[elem_nodes[j]];
+      }
+
+      // Form the interpolant
+      auto interp = mesh->create_interp(elem);
+
+      // Allocate the quadrature object
+      compute_level_set_quadrature_derivatives<spatial_dim, degree>(
+          interp, elem_lsf, interior_points_jacobian[i],
+          interior_weights_jacobian[i], exterior_points_jacobian[i],
+          exterior_weights_jacobian[i], interface_points_jacobian[i],
+          interface_weights_jacobian[i], interface_normals_jacobian[i]);
+    }
+  }
+
  private:
   void update_interface_quadratures() {
     int num_interface = interface_elems.size();
@@ -376,11 +481,19 @@ class CartesianCutMesh
     interface_normals.resize(num_interface);
 
     // Local info about the level set
-    std::vector<int> elem_nodes(mesh->get_max_num_nodes());
-    std::vector<T> elem_lsf(mesh->get_max_num_nodes());
+    std::vector<int> elem_nodes(mesh->get_max_element_nodes());
+    std::vector<T> elem_lsf(mesh->get_max_element_nodes());
 
     std::size_t max_pts = 0;
     for (int i = 0; i < num_interface; i++) {
+      interior_points[i].clear();
+      interior_weights[i].clear();
+      exterior_points[i].clear();
+      exterior_weights[i].clear();
+      interface_points[i].clear();
+      interface_weights[i].clear();
+      interface_normals[i].clear();
+
       int elem = interface_elems[i];
 
       // Get the lsf at the nodes
@@ -582,16 +695,23 @@ class CartesianCutMesh
   StencilInfo interface_interior;
   StencilInfo interface_exterior;
 
-  // Store the quadratures for each interface element
+  // Store the quadratures for the interface elements
   std::vector<std::vector<T>> interior_points;
   std::vector<std::vector<T>> interior_weights;
-
   std::vector<std::vector<T>> exterior_points;
   std::vector<std::vector<T>> exterior_weights;
-
   std::vector<std::vector<T>> interface_points;
   std::vector<std::vector<T>> interface_weights;
   std::vector<std::vector<T>> interface_normals;
+
+  // Store flattened Jacobians of the interface quadratures
+  std::vector<std::vector<T>> interior_points_jacobian;
+  std::vector<std::vector<T>> interior_weights_jacobian;
+  std::vector<std::vector<T>> exterior_points_jacobian;
+  std::vector<std::vector<T>> exterior_weights_jacobian;
+  std::vector<std::vector<T>> interface_points_jacobian;
+  std::vector<std::vector<T>> interface_weights_jacobian;
+  std::vector<std::vector<T>> interface_normals_jacobian;
 };
 
 template <typename T>
@@ -604,8 +724,8 @@ class CutMeshComponent final : public MeshBase<T> {
     return mesh->get_max_node_index(domain);
   }
 
-  int get_max_num_nodes() const override {
-    return mesh->get_max_num_nodes(domain);
+  int get_max_element_nodes() const override {
+    return mesh->get_max_element_nodes(domain);
   }
 
   int get_max_num_quadrature_points() const override {
