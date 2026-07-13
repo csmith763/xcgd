@@ -6,6 +6,7 @@
 #include "cartesian_mesh.h"
 #include "cut_mesh.h"
 #include "physics.h"
+#include "quadtree/quadtree.h"
 
 namespace py = pybind11;
 
@@ -134,4 +135,42 @@ PYBIND11_MODULE(xcgd, m) {
       .def("eval_functional", &xcgd::Assembler<T>::eval_functional)
       .def("eval_residual", &xcgd::Assembler<T>::eval_residual)
       .def("eval_jacobian", &xcgd::Assembler<T>::eval_jacobian);
+
+  py::class_<xcgd::Quadtree, std::shared_ptr<xcgd::Quadtree>>(m, "Quadtree")
+      .def(py::init<>())
+      .def("size", &xcgd::Quadtree::size)
+      .def("to_vtk", &xcgd::Quadtree::to_vtk, py::arg("filename"))
+      .def("duplicate", &xcgd::Quadtree::duplicate)
+      .def("coarsen", &xcgd::Quadtree::coarsen)
+      .def("balance", &xcgd::Quadtree::balance,
+           py::arg("balance_corner") = true)
+      .def(
+          "refine",
+          [](xcgd::Quadtree& tree, py::object refinement,
+             std::int32_t min_level, std::int32_t max_level) {
+            if (refinement.is_none()) {
+              tree.refine(nullptr, min_level, max_level);
+              return;
+            }
+
+            auto arr =
+                py::array_t<int, py::array::c_style | py::array::forcecast>(
+                    refinement);
+
+            if (arr.ndim() != 1) {
+              throw py::value_error(
+                  "refinement must be a 1D integer array/list");
+            }
+
+            if (arr.shape(0) != tree.size()) {
+              throw py::value_error(
+                  "refinement must have length equal to quadtree.size()");
+            }
+
+            tree.refine(arr.data(), min_level, max_level);
+          },
+          py::arg("refinement") = py::none(), py::arg("min_level") = 0,
+          py::arg("max_level") = xcgd::Quadrant::MAX_LEVEL)
+      .def("create_connectivity", &xcgd::Quadtree::create_connectivity,
+           py::arg("degree") = 1);
 }
