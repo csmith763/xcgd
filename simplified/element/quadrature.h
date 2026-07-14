@@ -14,14 +14,12 @@ enum class LevelSetDerivMethod { AD, CENTRAL_FD, FORWARD_FD };
 
 template <int spatial_dim, int degree, typename T, class Vandermonde>
 void compute_level_set_quadrature(
-    const Vandermonde& interp, const std::vector<T>& lsf,
+    T x0, T y0, T delta, const Vandermonde& interp, const std::vector<T>& lsf,
     std::vector<T>& interior_points, std::vector<T>& interior_weights,
     std::vector<T>& exterior_points, std::vector<T>& exterior_weights,
     std::vector<T>& interface_points, std::vector<T>& interface_weights,
     std::vector<T>& interface_normals) {
   using algvec = algoim::uvector<T, spatial_dim>;
-  T x0, y0, delta;
-  interp.get_base_data(x0, y0, delta);
 
   T data[(degree + 1) * (degree + 1)];
   algoim::xarray<T, spatial_dim> phi(
@@ -77,7 +75,7 @@ void compute_level_set_quadrature(
 
 template <int spatial_dim, int degree, typename T, class Vandermonde>
 void compute_level_set_quadrature_derivatives(
-    const Vandermonde& interp, const std::vector<T>& lsf,
+    T x0, T y0, T delta, const Vandermonde& interp, const std::vector<T>& lsf,
     std::vector<T>& interior_points_jac, std::vector<T>& interior_weights_jac,
     std::vector<T>& exterior_points_jac, std::vector<T>& exterior_weights_jac,
     std::vector<T>& interface_points_jac, std::vector<T>& interface_weights_jac,
@@ -101,7 +99,7 @@ void compute_level_set_quadrature_derivatives(
         interface_normals.clear();
 
         compute_level_set_quadrature<spatial_dim, degree, T, Vandermonde>(
-            interp, lsf_eval, interior_points, interior_weights,
+            x0, y0, delta, interp, lsf_eval, interior_points, interior_weights,
             exterior_points, exterior_weights, interface_points,
             interface_weights, interface_normals);
       };

@@ -5,6 +5,7 @@
 #include "assembler.h"
 #include "cartesian_mesh.h"
 #include "cut_mesh.h"
+#include "cut_quadtree_mesh.h"
 #include "physics.h"
 #include "quadtree.h"
 #include "quadtree_mesh.h"
@@ -176,5 +177,22 @@ PYBIND11_MODULE(xcgd, m) {
   py::class_<xcgd::QuadtreeMesh<T>, xcgd::MeshBase<T>,
              std::shared_ptr<xcgd::QuadtreeMesh<T>>>(m, "QuadtreeMesh")
       .def(py::init<std::shared_ptr<xcgd::Quadtree>, T>(), py::arg("tree"),
-           py::arg("length") = 1.0);
+           py::arg("length") = 1.0)
+      .def("update", &xcgd::QuadtreeMesh<T>::update)
+      .def("get_node_locations", &xcgd::QuadtreeMesh<T>::get_node_locations);
+
+  py::class_<xcgd::QuadtreeCutMesh<T>,
+             std::shared_ptr<xcgd::QuadtreeCutMesh<T>>>(m, "QuadtreeCutMesh")
+      .def(py::init<std::shared_ptr<xcgd::QuadtreeMesh<T>>,
+                    std::shared_ptr<xcgd::QuadtreeMesh<T>>>())
+      .def("update", &xcgd::QuadtreeCutMesh<T>::update)
+      .def("update_derivatives", &xcgd::QuadtreeCutMesh<T>::update_derivatives)
+      .def(
+          "get_lsf",
+          [](xcgd::QuadtreeCutMesh<T>& self) {
+            return make_vector_view(self.get_lsf(), py::cast(&self));
+          },
+          py::return_value_policy::reference_internal)
+      .def("get_interface_elements",
+           &xcgd::QuadtreeCutMesh<T>::get_interface_elements);
 }

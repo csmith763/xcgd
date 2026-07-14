@@ -45,6 +45,19 @@ class QuadtreeMesh : public MeshBase<T> {
     update();
   }
 
+  std::vector<T> get_node_locations() const {
+    NodeArray& node_array = *nodes;
+    std::vector<T> X(2 * node_array.size());
+    std::int64_t hmax = std::int64_t(1) << Quadrant::MAX_LEVEL;
+
+    for (int i = 0; i < node_array.size(); i++) {
+      X[2 * i] = length * node_array[i].x / hmax;
+      X[2 * i + 1] = length * node_array[i].y / hmax;
+    }
+
+    return X;
+  }
+
   void update() {
     QuadrantArray& quads = *tree->get_quadrants();
     int num_elements = quads.size();
@@ -87,6 +100,96 @@ class QuadtreeMesh : public MeshBase<T> {
     }
   }
 
+  // Get the quadrant
+  Quadrant get_quadrant(int elem) const {
+    QuadrantArray& quads = *tree->get_quadrants();
+    return quads[elem];
+  }
+
+  // Find the index of the enclosing quadrant
+  int find_enclosing_index(const Quadrant& q) const {
+    QuadrantArray& quads = *tree->get_quadrants();
+
+    if (quads.size() == 0) {
+      return -1;
+    }
+
+    int low = 0;
+    int high = quads.size() - 1;
+    int mid = low + (high - low) / 2;
+
+    while (low <= high) {
+      const int mid = low + (high - low) / 2;
+
+      if (quads[mid].contains(q)) {
+        return mid;
+      }
+
+      const int stat = Quadrant::compare_position(quads[mid], q);
+
+      if (stat < 0) {
+        low = mid + 1;
+      } else if (stat > 0) {
+        high = mid - 1;
+      } else {
+        return -1;
+      }
+    }
+
+    return -1;
+  }
+
+  // Find the 4 nodes of the central cell of this element
+  void get_cell_nodes(int elem, std::vector<int>& cell_nodes) {
+    QuadrantArray& quads = *tree->get_quadrants();
+    std::int64_t h = std::int64_t(1)
+                     << (Quadrant::MAX_LEVEL - quads[elem].level);
+
+    for (int corner = 0; corner < 4; corner++) {
+      QuadrantNode node;
+      node.x = quads[elem].x + h * (corner % 2);
+      node.y = quads[elem].y + h * (corner / 2);
+
+      cell_nodes[corner] = nodes->get_index(node);
+    }
+  }
+
+  // Get the points for the cell
+  void get_cell_points(int elem, std::vector<T>& pts) {
+    QuadrantArray& quads = *tree->get_quadrants();
+    constexpr std::int32_t hmax = 1 << Quadrant::MAX_LEVEL;
+    std::int32_t h = quads[elem].get_size();
+
+    for (int corner = 0; corner < 4; corner++) {
+      pts[2 * corner] = length * (quads[elem].x + h * (corner % 2)) / hmax;
+      pts[2 * corner + 1] = length * (quads[elem].y + h * (corner / 2)) / hmax;
+    }
+  }
+
+  auto create_interp(int elem) {
+    // Set the delta, x and y locations
+    QuadrantArray& quads = *tree->get_quadrants();
+    T delta = length * quads[elem].get_size() / hmax;
+    T x0 = length * quads[elem].x / hmax;
+    T y0 = length * quads[elem].y / hmax;
+
+    int nnodes = stencil[elem].size();
+    const T* Xelem = X[elem].data();
+
+    Vandermonde2D interp(x0, y0, delta, nnodes, Xelem,
+                         detail::PolyBasis2D(exclude[elem]),
+                         detail::PolyBasisDeriv2D(exclude[elem]));
+    return interp;
+  }
+
+  void get_base_data(int elem, T& x, T& y, T& delta) {
+    QuadrantArray& quads = *tree->get_quadrants();
+    delta = length * quads[elem].get_size() / hmax;
+    x = length * quads[elem].x / hmax;
+    y = length * quads[elem].y / hmax;
+  }
+
+  // Overrides for the base class
   int get_max_node_index() const { return nodes->size(); }
   int get_num_elements() const { return tree->size(); }
   int get_max_element_nodes() const { return detail::PolyBasis2D::MAX_BASIS; }
@@ -153,6 +256,7 @@ class QuadtreeMesh : public MeshBase<T> {
         // Check if we have a dependent edge from a coarse element
         for (int edge_index = 0; edge_index < 4; edge_index++) {
           if (quads[i].info & (1 << (4 + edge_index))) {
+            edge_stencil[i][edge_index].clear();
             edge_stencil[i][edge_index].reserve(5);
 
             // Find the hanging node index
@@ -210,6 +314,7 @@ class QuadtreeMesh : public MeshBase<T> {
       for (int edge_index = 0; edge_index < 4; edge_index++) {
         if ((quads[i].info & (1 << edge_index)) == 0 &&
             (quads[i].info & (1 << (4 + edge_index))) == 0) {
+          edge_stencil[i][edge_index].clear();
           edge_stencil[i][edge_index].reserve(4);
           add_edge_stencil(quads[i], edge_index, edge_stencil[i][edge_index]);
         }

@@ -106,6 +106,7 @@ class Quadrant {
 
     return neighbor;
   }
+
   bool contains(const Quadrant& quad) const {
     const std::int32_t h = get_size();
 

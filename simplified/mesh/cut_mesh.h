@@ -1,5 +1,5 @@
-#ifndef XCGD_CUT_MESH_H
-#define XCGD_CUT_MESH_H
+#ifndef XCGD_CUT_CARTESIAN_MESH_H
+#define XCGD_CUT_CARTESIAN_MESH_H
 
 #include <array>
 #include <vector>
@@ -457,10 +457,12 @@ class CartesianCutMesh
 
       // Form the interpolant
       auto interp = mesh->create_interp(elem);
+      T x0, y0, delta;
+      interp.get_base_data(x0, y0, delta);
 
       // Allocate the quadrature object
       compute_level_set_quadrature_derivatives<spatial_dim, degree>(
-          interp, elem_lsf, interior_points_jacobian[i],
+          x0, y0, delta, interp, elem_lsf, interior_points_jacobian[i],
           interior_weights_jacobian[i], exterior_points_jacobian[i],
           exterior_weights_jacobian[i], interface_points_jacobian[i],
           interface_weights_jacobian[i], interface_normals_jacobian[i]);
@@ -505,11 +507,13 @@ class CartesianCutMesh
       // Form the interpolant
       auto interp = mesh->create_interp(elem);
 
-      // Allocate the quadrature object
+      // Find the quadrature over the specified area
+      T x0, y0, delta;
+      interp.get_base_data(x0, y0, delta);
       compute_level_set_quadrature<spatial_dim, degree>(
-          interp, elem_lsf, interior_points[i], interior_weights[i],
-          exterior_points[i], exterior_weights[i], interface_points[i],
-          interface_weights[i], interface_normals[i]);
+          x0, y0, delta, interp, elem_lsf, interior_points[i],
+          interior_weights[i], exterior_points[i], exterior_weights[i],
+          interface_points[i], interface_weights[i], interface_normals[i]);
 
       max_pts =
           std::max(max_pts, std::max(interior_weights[i].size(),
@@ -761,4 +765,4 @@ class CutMeshComponent final : public MeshBase<T> {
 
 }  // namespace xcgd
 
-#endif  // XCGD_CUT_MESH_H
+#endif  // XCGD_CUT_CARTESIAN_MESH_H
