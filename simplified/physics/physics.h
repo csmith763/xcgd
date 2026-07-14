@@ -26,8 +26,8 @@ class HelmholtzPhysics {
   using gradient_t = A2D::Vec<T, 2>;
 
   template <typename T>
-  T energy(T& weight, location_t<T>& xloc, normal_t<T>& normal, input_t<T>& val,
-           gradient_t<T>& grad) const {
+  T integrand(T& weight, location_t<T>& xloc, normal_t<T>& normal,
+              input_t<T>& val, gradient_t<T>& grad) const {
     return 0.5 * weight *
            (val[0] * val[0] + r * r * (grad[0] * grad[0] + grad[1] * grad[1]));
   }
@@ -74,8 +74,8 @@ class LinearElasticity2D {
   using gradient_t = A2D::Mat<T, dof_per_node, spatial_dim>;
 
   template <typename T>
-  T energy(T& weight, location_t<T>& xloc, normal_t<T>& normal, input_t<T>& val,
-           gradient_t<T>& grad) const {
+  T integrand(T& weight, location_t<T>& xloc, normal_t<T>& normal,
+              input_t<T>& val, gradient_t<T>& grad) const {
     T strain_energy, potential = 0.0;
     A2D::SymMat<T, spatial_dim> E, S;
 
@@ -147,8 +147,8 @@ class ElasticityMass2D {
   using gradient_t = A2D::Mat<T, dof_per_node, spatial_dim>;
 
   template <typename T>
-  T energy(T& weight, location_t<T>& xloc, normal_t<T>& normal, input_t<T>& val,
-           gradient_t<T>& grad) const {
+  T integrand(T& weight, location_t<T>& xloc, normal_t<T>& normal,
+              input_t<T>& val, gradient_t<T>& grad) const {
     return 0.5 * weight * rho * (val[0] * val[0] + val[1] * val[1]);
   }
 

@@ -124,7 +124,7 @@ class Vandermonde2D {
     detail::Lapack<T>::getrf(num_nodes, V.data(), ipiv.data());
   }
 
-  void get_base_data(T& x0_, T& y0_, T& delta_) {
+  void get_base_data(T& x0_, T& y0_, T& delta_) const {
     x0_ = x0;
     y0_ = y0;
     delta_ = delta;
@@ -194,8 +194,8 @@ class Vandermonde2D {
   T x0, y0;
   T delta;
   int num_nodes;
-  const Basis& basis;
-  const BasisDeriv& deriv;
+  Basis basis;
+  BasisDeriv deriv;
 
   // Storage for the factorization of V
   std::vector<T> V;

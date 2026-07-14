@@ -2,6 +2,7 @@ import numpy as np
 import xcgd as xd
 import amigo as am
 import matplotlib.pylab as plt
+import time
 
 
 def zero_rows_and_columns(zero_dof, nrows, rowp, cols, data):
@@ -48,16 +49,16 @@ def apply_boundary_conditions(nx, ny, csr):
     return mat, rhs
 
 
-Lx = 1.0
+Lx = 3.0
 
-nx = 128
-ny = 128
+nx = 256
+ny = 256
 delta = Lx / nx
 Ly = (ny / nx) * Lx
 mesh = xd.CartesianMesh(nx, ny, delta)
 
 # Set up the problem radius
-radius = 1.0 / 3.0
+radius = 1.0
 
 E, nu, rho = 70.0e3, 0.3, 1.0
 elas = xd.LinearElasticity2D(E, nu)
@@ -67,13 +68,20 @@ mass = xd.ElasticityMass2D(rho)
 X, Y = np.meshgrid(np.linspace(0, Lx, nx + 1), np.linspace(0, Ly, ny + 1))
 
 # Compute a level set function
-lsf = (X - 0.5) ** 2 + (Y - 0.5) ** 2 - radius**2
+lsf = (X - 0.5 * Lx) ** 2 + (Y - 0.5 * Ly) ** 2 - radius**2
 
 # Set the level set function
 cut_mesh = xd.CartesianCutMesh(mesh)
 cut_mesh.get_lsf()[:] = lsf.flatten()
 
+t0 = time.perf_counter()
 cut_mesh.update()
+t1 = time.perf_counter()
+cut_mesh.update_derivatives()
+t2 = time.perf_counter()
+
+print("update time: ", t1 - t0)
+print("derivative time: ", t2 - t1)
 
 interior_mesh = cut_mesh.create_interior_mesh()
 
@@ -91,12 +99,6 @@ interior_mass_assembler.eval_jacobian()
 
 kcsr = interior_stiffness_assembler.get_jacobian()
 mcsr = interior_mass_assembler.get_jacobian()
-
-print(np.max(kcsr.data))
-print(np.min(kcsr.data))
-
-print(np.max(mcsr.data))
-print(np.min(mcsr.data))
 
 # Use the modified data and right-hand-side
 # kmat = am.CSRMat(kcsr.nrows, kcsr.nrows, kcsr.rowp, kcsr.cols, kcsr.data)

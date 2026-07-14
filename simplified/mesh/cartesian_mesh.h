@@ -95,16 +95,17 @@ class CartesianMesh : public MeshBase<T> {
 
   // Overrides needed to use this as an analysis mesh directly
   int get_max_node_index() const { return (nx + 1) * (ny + 1); }
+  int get_num_elements() const { return nx * ny; }
+
+  int get_max_element_nodes() const { return (degree + 1) * (degree + 1); }
   int get_max_num_quadrature_points() const {
     return (degree + 1) * (degree + 1);
   }
-  int get_max_num_nodes() const { return (degree + 1) * (degree + 1); }
-  int get_num_elements() const { return nx * ny; }
 
   int get_nodes(int elem, std::vector<int>& nodes) const {
     return get_node_numbers(elem, nodes);
   }
-  void get_node_points(int elem, std::vector<T>& X) const {
+  void get_points(int elem, std::vector<T>& X) const {
     get_point_locations(elem, X);
   }
 

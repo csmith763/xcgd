@@ -15,7 +15,8 @@ class MeshAssemblerBase {
   virtual ~MeshAssemblerBase() = default;
 
   virtual int get_max_dof_index() const = 0;
-  virtual T energy(const std::vector<T>& dof) const = 0;
+  virtual int get_max_design_index() const = 0;
+  virtual T functional(const std::vector<T>& dof) const = 0;
   virtual void add_residual(const std::vector<T>& dof,
                             std::vector<T>& res) const = 0;
   virtual void add_jacobian(const std::vector<T>& dof,
@@ -33,13 +34,19 @@ class Assembler {
 
   void update() {
     num_dof = 0;
+    num_design_vars = 0;
     for (int i = 0; i < assemblers.size(); i++) {
       int index = assemblers[i]->get_max_dof_index();
       num_dof = std::max(index, num_dof);
+
+      index = assemblers[i]->get_max_design_index();
+      num_design_vars = std::max(index, num_design_vars);
     }
 
     dof.resize(num_dof);
     res.resize(num_dof);
+    adjoint.resize(num_dof);
+    dfdx.resize(num_design_vars);
 
     // Build the non-zero pattern
     pattern_builder.initialize(num_dof);
@@ -59,14 +66,16 @@ class Assembler {
 
   std::vector<T>& get_dof() { return dof; }
   std::vector<T>& get_residual() { return res; }
+  std::vector<T>& get_adjoint() { return dfdx; }
+  std::vector<T>& get_dfdx() { return dfdx; }
   CSRMat<T>& get_jacobian() { return csr; }
 
-  T eval_energy() const {
-    T total_energy = 0.0;
+  T eval_functional() const {
+    T toal_value = 0.0;
     for (int i = 0; i < assemblers.size(); i++) {
-      total_energy += assemblers[i]->energy(dof);
+      toal_value += assemblers[i]->functional(dof);
     }
-    return total_energy;
+    return toal_value;
   }
 
   void eval_residual() {
@@ -83,10 +92,28 @@ class Assembler {
     }
   }
 
+  // Functions for compute the derivatives
+  void zero_derivative() { std::fill(dfdx.begin(), dfdx.end(), T(0)); }
+
+  void add_functional_derivative() {
+    for (int i = 0; i < assemblers.size(); i++) {
+      assemblers[i]->add_functional_derivative(dof, dfdx);
+    }
+  }
+
+  void add_adjoint_residual_product() {
+    for (int i = 0; i < assemblers.size(); i++) {
+      assemblers[i]->add_adjoint_residual_product(dof, adjoint, dfdx);
+    }
+  }
+
  private:
   int num_dof;
+  int num_design_vars;
   std::vector<T> dof;
   std::vector<T> res;
+  std::vector<T> adjoint;
+  std::vector<T> dfdx;
   CSRMat<T> csr;
   std::vector<std::shared_ptr<MeshAssemblerBase<T>>> assemblers;
   CSRPatternBuilder pattern_builder;
@@ -106,18 +133,19 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   int get_max_dof_index() const {
     return dof_per_node * mesh->get_max_node_index();
   }
+  int get_max_design_index() const { return mesh->get_max_design_index(); }
 
   /**
-   * @brief Compute the energy
+   * @brief Compute the functional value
    *
    * @param dof Input degrees of freedom vector
    * @return T Energy contribution
    */
-  T energy(const std::vector<T>& dof) const {
-    T total_energy = 0.0;
+  T functional(const std::vector<T>& dof) const {
+    T total_value = 0.0;
 
     // Query the max nodes and max quadrature points
-    int max_nodes = mesh->get_max_num_nodes();
+    int max_nodes = mesh->get_max_element_nodes();
     int max_quad_pts = mesh->get_max_num_quadrature_points();
 
     // Arrays for the node numbers
@@ -145,7 +173,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -168,11 +196,11 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
         interp_gradient(dof_per_node, num_nodes, Nxptr, elem_dof, grad);
 
-        total_energy += physics.energy(weights[i], xloc, normal, vals, grad);
+        total_value += physics.integrand(weights[i], xloc, normal, vals, grad);
       }
     }
 
-    return total_energy;
+    return total_value;
   }
 
   /**
@@ -183,7 +211,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
    */
   void add_residual(const std::vector<T>& dof, std::vector<T>& res) const {
     // Query the max nodes and max quadrature points
-    int max_nodes = mesh->get_max_num_nodes();
+    int max_nodes = mesh->get_max_element_nodes();
     int max_quad_pts = mesh->get_max_num_quadrature_points();
 
     // Arrays for the node numbers
@@ -212,7 +240,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -253,7 +281,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
   void add_jacobian(const std::vector<T>& dof, CSRMat<T>& csr) const {
     // Query the max nodes and max quadrature points
-    int max_nodes = mesh->get_max_num_nodes();
+    int max_nodes = mesh->get_max_element_nodes();
     int max_quad_pts = mesh->get_max_num_quadrature_points();
 
     // Arrays for the node numbers
@@ -283,7 +311,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -366,7 +394,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   }
 
   void add_row_counts(CSRPatternBuilder& pattern_builder) const {
-    int max_nodes = mesh->get_max_num_nodes();
+    int max_nodes = mesh->get_max_element_nodes();
     std::vector<int> nodes(max_nodes);
     std::vector<int> elem_dofs(dof_per_node * max_nodes);
 
@@ -383,7 +411,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
   }
 
   void insert_columns(CSRPatternBuilder& pattern_builder) const {
-    int max_nodes = mesh->get_max_num_nodes();
+    int max_nodes = mesh->get_max_element_nodes();
     std::vector<int> nodes(max_nodes);
     std::vector<int> elem_dofs(dof_per_node * max_nodes);
 
@@ -395,6 +423,139 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
       pattern_builder.add_dense_block(elem_dofs.data(), num_elem_dofs,
                                       elem_dofs.data(), num_elem_dofs);
+    }
+  }
+
+  void add_functional_derivative(const std::vector<T>& dof,
+                                 std::vector<T>& dfdx) const {
+    // Query the max nodes and max quadrature points
+    int max_nodes = mesh->get_max_element_nodes();
+    int max_quad_pts = mesh->get_max_num_quadrature_points();
+
+    // Arrays for the node numbers
+    std::vector<int> nodes(max_nodes);
+    std::vector<T> X(spatial_dim * max_nodes);
+    std::vector<T> elem_dof(dof_per_node * max_nodes);
+
+    // Arrays for the quadrature points, weights and normals
+    std::vector<T> weights(max_quad_pts);
+    std::vector<T> points(spatial_dim * max_quad_pts);
+    std::vector<T> normals(spatial_dim * max_quad_pts);
+
+    // Arrays for storing the basis functions and derivatives
+    std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
+
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
+      // Get the node numbers and locations associated with the element
+      int num_nodes = mesh->get_nodes(elem, nodes);
+
+      // Get the quadrature weights and points associated with the element
+      int num_quad_points =
+          mesh->get_quadrature(elem, weights, points, normals);
+
+      // Evaluate the basis at all the quadrature points
+      mesh->eval_basis(elem, num_quad_points, points, Nd);
+
+      // Get the node locations
+      mesh->get_points(elem, X);
+
+      // Get the variables associated with the nodes
+      get_element_vars(num_nodes, nodes, dof, elem_dof);
+
+      // Perform the quadrature
+      for (int i = 0; i < num_quad_points; i++) {
+        typename Physics::template location_t<T> xloc;
+        typename Physics::template normal_t<T> normal;
+        typename Physics::template input_t<T> vals;
+        typename Physics::template gradient_t<T> grad;
+
+        const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
+
+        for (int k = 0; k < spatial_dim; k++) {
+          normal[k] = normals[i * spatial_dim + k];
+        }
+
+        interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
+        interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
+        interp_gradient(dof_per_node, num_nodes, Nxptr, elem_dof, grad);
+
+        // total_value += physics.integrand(weights[i], xloc, normal, vals,
+        // grad);
+      }
+    }
+  }
+
+  void add_adjoint_residual_product(const std::vector<T>& dof,
+                                    const std::vector<T>& adjoint,
+                                    std::vector<T>& dfdx) const {
+    // Query the max nodes and max quadrature points
+    int max_nodes = mesh->get_max_element_nodes();
+    int max_quad_pts = mesh->get_max_num_quadrature_points();
+
+    // Arrays for the node numbers
+    std::vector<int> nodes(max_nodes);
+    std::vector<T> X(spatial_dim * max_nodes);
+    std::vector<T> elem_dof(dof_per_node * max_nodes);
+    std::vector<T> elem_res(dof_per_node * max_nodes);
+
+    // Arrays for the quadrature points, weights and normals
+    std::vector<T> weights(max_quad_pts);
+    std::vector<T> points(spatial_dim * max_quad_pts);
+    std::vector<T> normals(spatial_dim * max_quad_pts);
+
+    // Arrays for storing the basis functions and derivatives
+    std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
+
+    for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
+      // Get the node numbers and locations associated with the element
+      int num_nodes = mesh->get_nodes(elem, nodes);
+
+      // Get the quadrature weights and points associated with the element
+      int num_quad_points =
+          mesh->get_quadrature(elem, weights, points, normals);
+
+      // Evaluate the basis at all the quadrature points
+      mesh->eval_basis(elem, num_quad_points, points, Nd);
+
+      // Get the node locations
+      mesh->get_points(elem, X);
+
+      // Get the variables associated with the nodes
+      get_element_vars(num_nodes, nodes, dof, elem_dof);
+
+      // Fill the element zeros in
+      std::fill(elem_res.begin(), elem_res.begin() + dof_per_node * num_nodes,
+                T(0));
+
+      // Perform the quadrature
+      for (int i = 0; i < num_quad_points; i++) {
+        typename Physics::template location_t<T> xloc;
+        typename Physics::template normal_t<T> normal;
+        typename Physics::template input_t<T> vals;
+        typename Physics::template gradient_t<T> grad;
+        typename Physics::template input_t<T> vals_res;
+        typename Physics::template gradient_t<T> grad_res;
+
+        for (int k = 0; k < spatial_dim; k++) {
+          normal[k] = normals[i * spatial_dim + k];
+        }
+        const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
+        const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
+
+        interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
+        interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
+        interp_gradient(dof_per_node, num_nodes, Nxptr, elem_dof, grad);
+
+        // Compute dfdw, dfdvals, dfdgrad
+        physics.residual(weights[i], xloc, normal, vals, grad, vals_res,
+                         grad_res);
+
+        add_res_values(dof_per_node, num_nodes, Nptr, vals_res, elem_res);
+        add_res_gradient(dof_per_node, num_nodes, Nxptr, grad_res, elem_res);
+      }
+
+      // add_element_residual(num_nodes, nodes, elem_res, res);
     }
   }
 
