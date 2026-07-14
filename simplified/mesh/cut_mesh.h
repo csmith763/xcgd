@@ -126,7 +126,7 @@ class CartesianCutMesh
     return nnodes;
   }
 
-  void get_node_points(CutDomain domain, int elem, std::vector<T>& X) const {
+  void get_points(CutDomain domain, int elem, std::vector<T>& X) const {
     if (domain == CutDomain::INTERIOR_VOLUME) {
       if (elem < num_interior) {
         X.assign(interior.X[elem].begin(), interior.X[elem].end());
@@ -740,8 +740,8 @@ class CutMeshComponent final : public MeshBase<T> {
     return mesh->get_nodes(domain, elem, nodes);
   }
 
-  void get_node_points(int elem, std::vector<T>& X) const override {
-    mesh->get_node_points(domain, elem, X);
+  void get_points(int elem, std::vector<T>& X) const override {
+    mesh->get_points(domain, elem, X);
   }
 
   int get_quadrature(int elem, std::vector<T>& weights, std::vector<T>& points,

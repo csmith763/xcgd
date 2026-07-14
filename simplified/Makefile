@@ -17,7 +17,7 @@ else
   LDFLAGS := -shared
 endif
 
-INCLUDES := -I$(A2D_INCLUDE_DIR) -I$(ALGOIM_INCLUDE_DIR) -Ielement -Iphysics -Imesh -Iquadtree
+INCLUDES := -I$(A2D_INCLUDE_DIR) -I$(ALGOIM_INCLUDE_DIR) -Ielement -Iphysics -Imesh
 
 TARGET := $(MODULE)$(PYTHON_EXT_SUFFIX)
 

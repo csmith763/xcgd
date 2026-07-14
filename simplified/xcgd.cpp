@@ -6,7 +6,8 @@
 #include "cartesian_mesh.h"
 #include "cut_mesh.h"
 #include "physics.h"
-#include "quadtree/quadtree.h"
+#include "quadtree.h"
+#include "quadtree_mesh.h"
 
 namespace py = pybind11;
 
@@ -170,7 +171,10 @@ PYBIND11_MODULE(xcgd, m) {
             tree.refine(arr.data(), min_level, max_level);
           },
           py::arg("refinement") = py::none(), py::arg("min_level") = 0,
-          py::arg("max_level") = xcgd::Quadrant::MAX_LEVEL)
-      .def("create_connectivity", &xcgd::Quadtree::create_connectivity,
-           py::arg("degree") = 1);
+          py::arg("max_level") = xcgd::Quadrant::MAX_LEVEL);
+
+  py::class_<xcgd::QuadtreeMesh<T>, xcgd::MeshBase<T>,
+             std::shared_ptr<xcgd::QuadtreeMesh<T>>>(m, "QuadtreeMesh")
+      .def(py::init<std::shared_ptr<xcgd::Quadtree>, T>(), py::arg("tree"),
+           py::arg("length") = 1.0);
 }

@@ -91,7 +91,7 @@ class CartesianMesh : public MeshBase<T> {
   int get_nodes(int elem, std::vector<int>& nodes) const {
     return get_node_numbers(elem, nodes);
   }
-  void get_node_points(int elem, std::vector<T>& X) const {
+  void get_points(int elem, std::vector<T>& X) const {
     get_point_locations(elem, X);
   }
 

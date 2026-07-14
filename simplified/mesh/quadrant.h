@@ -8,17 +8,44 @@
 
 namespace xcgd {
 
+class QuadrantNode {
+ public:
+  static int compare_position(const QuadrantNode& a, const QuadrantNode& b) {
+    std::uint64_t xxor = a.x ^ b.x;
+    std::uint64_t yxor = a.y ^ b.y;
+    std::uint64_t sor = xxor | yxor;
+
+    // Note that here we do not distinguish between levels
+    // Check for the most-significant bit
+    int discrim = 0;
+    if (xxor > (sor ^ xxor)) {
+      discrim = a.x - b.x;
+    } else {
+      discrim = a.y - b.y;
+    }
+
+    if (discrim > 0) {
+      return 1;
+    } else if (discrim < 0) {
+      return -1;
+    }
+
+    return 0;
+  }
+
+  std::int64_t x, y;
+};
+
 class Quadrant {
  public:
   static constexpr std::int32_t MAX_LEVEL = 30;
 
-  static constexpr std::int16_t NODE_LABEL = 1;
-  static constexpr std::int16_t EDGE_LABEL = 2;
-  static constexpr std::int16_t FACE_LABEL = 4;
-
+  std::int32_t get_size() const {
+    return std::int32_t(1) << (MAX_LEVEL - level);
+  }
   int child_id() const {
     int id = 0;
-    const std::int32_t h = 1 << (MAX_LEVEL - level);
+    const std::int32_t h = get_size();
 
     id = id | ((x & h) ? 1 : 0);
     id = id | ((y & h) ? 2 : 0);
@@ -26,7 +53,7 @@ class Quadrant {
     return id;
   }
   Quadrant get_sibling(int id) const {
-    const std::int32_t h = 1 << (MAX_LEVEL - level);
+    const std::int32_t h = get_size();
 
     std::int32_t xr = ((x & h) ? x - h : x);
     std::int32_t yr = ((y & h) ? y - h : y);
@@ -44,7 +71,7 @@ class Quadrant {
     if (level > 0) {
       p.level = level - 1;
       p.info = 0;
-      const int32_t h = 1 << (MAX_LEVEL - level);
+      const int32_t h = get_size();
 
       p.x = x & ~h;
       p.y = y & ~h;
@@ -59,7 +86,7 @@ class Quadrant {
   Quadrant edge_neighbor(int edge) const {
     Quadrant neighbor;
 
-    const std::int32_t h = 1 << (MAX_LEVEL - level);
+    const std::int32_t h = get_size();
     neighbor.level = level;
     neighbor.info = 0;
 
@@ -70,7 +97,7 @@ class Quadrant {
   Quadrant corner_neighbor(int corner) const {
     Quadrant neighbor;
 
-    const std::int32_t h = 1 << (MAX_LEVEL - level);
+    const std::int32_t h = get_size();
     neighbor.level = level;
     neighbor.info = 0;
 
@@ -80,7 +107,7 @@ class Quadrant {
     return neighbor;
   }
   bool contains(const Quadrant& quad) const {
-    const std::int32_t h = 1 << (MAX_LEVEL - level);
+    const std::int32_t h = get_size();
 
     // Check whether the quadrant lies within this quadrant
     if ((quad.x >= x && quad.x < x + h) && (quad.y >= y && quad.y < y + h)) {
@@ -88,6 +115,16 @@ class Quadrant {
     }
 
     return false;
+  }
+
+  QuadrantNode get_node(int degree, int ii, int jj) const {
+    QuadrantNode node;
+
+    std::int64_t h = std::int64_t(1) << (MAX_LEVEL - level);
+    node.x = degree * std::int64_t(x) + ii * h;
+    node.y = degree * std::int64_t(y) + jj * h;
+
+    return node;
   }
 
   static int compare(const Quadrant& a, const Quadrant& b) {
@@ -174,6 +211,19 @@ class QuadrantArray {
     }
 
     return nullptr;
+  }
+
+  int get_index(const Quadrant& q) const {
+    auto it = std::lower_bound(quads.begin(), quads.end(), q,
+                               [](const Quadrant& a, const Quadrant& b) {
+                                 return Quadrant::compare(a, b) < 0;
+                               });
+
+    if (it != quads.end() && Quadrant::compare(*it, q) == 0) {
+      return it - quads.begin();
+    }
+
+    return -1;
   }
 
   std::shared_ptr<QuadrantArray> duplicate() const {
@@ -341,34 +391,22 @@ class QuadrantHash {
  */
 class NodeArray {
  public:
-  NodeArray(std::vector<Quadrant> vec) : quads(std::move(vec)) {
+  NodeArray(std::vector<QuadrantNode> vec) : quads(std::move(vec)) {
     sort_and_uniquify();
   }
 
   int size() const { return static_cast<int>(quads.size()); }
-  Quadrant& operator[](int i) { return quads[i]; }
-  const Quadrant& operator[](int i) const { return quads[i]; }
+  QuadrantNode& operator[](int i) { return quads[i]; }
+  const QuadrantNode& operator[](int i) const { return quads[i]; }
 
-  Quadrant* contains(const Quadrant& q) {
-    auto it = std::lower_bound(quads.begin(), quads.end(), q,
-                               [](const Quadrant& a, const Quadrant& b) {
-                                 return Quadrant::compare_position(a, b) < 0;
-                               });
+  int get_index(const QuadrantNode& q) const {
+    auto it =
+        std::lower_bound(quads.begin(), quads.end(), q,
+                         [](const QuadrantNode& a, const QuadrantNode& b) {
+                           return QuadrantNode::compare_position(a, b) < 0;
+                         });
 
-    if (it != quads.end() && Quadrant::compare_position(*it, q) == 0) {
-      return &(*it);
-    }
-
-    return nullptr;
-  }
-
-  int get_index(const Quadrant& q) const {
-    auto it = std::lower_bound(quads.begin(), quads.end(), q,
-                               [](const Quadrant& a, const Quadrant& b) {
-                                 return Quadrant::compare_position(a, b) < 0;
-                               });
-
-    if (it != quads.end() && Quadrant::compare_position(*it, q) == 0) {
+    if (it != quads.end() && QuadrantNode::compare_position(*it, q) == 0) {
       return it - quads.begin();
     }
 
@@ -382,19 +420,19 @@ class NodeArray {
  private:
   void sort_and_uniquify(bool uniquify = true) {
     std::sort(quads.begin(), quads.end(),
-              [](const Quadrant& a, const Quadrant& b) {
-                return Quadrant::compare_position(a, b) < 0;
+              [](const QuadrantNode& a, const QuadrantNode& b) {
+                return QuadrantNode::compare_position(a, b) < 0;
               });
 
     auto last = std::unique(quads.begin(), quads.end(),
-                            [](const Quadrant& a, const Quadrant& b) {
-                              return Quadrant::compare_position(a, b) == 0;
+                            [](const QuadrantNode& a, const QuadrantNode& b) {
+                              return QuadrantNode::compare_position(a, b) == 0;
                             });
 
     quads.erase(last, quads.end());
   }
 
-  std::vector<Quadrant> quads;
+  std::vector<QuadrantNode> quads;
 };
 
 /**
@@ -416,7 +454,7 @@ class NodeHash {
    * @return true The quadrant was added
    * @return false The quadrant already exists
    */
-  bool add_node(const Quadrant& quad) {
+  bool add_node(const QuadrantNode& quad) {
     auto result = quads.insert(quad);
     return result.second;
   }
@@ -427,10 +465,10 @@ class NodeHash {
    * @return std::shared_ptr<NodeArray>
    */
   std::shared_ptr<NodeArray> to_array() const {
-    std::vector<Quadrant> vec;
+    std::vector<QuadrantNode> vec;
     vec.reserve(quads.size());
 
-    for (const Quadrant& q : quads) {
+    for (const QuadrantNode& q : quads) {
       vec.push_back(q);
     }
 
@@ -439,12 +477,12 @@ class NodeHash {
 
  private:
   struct NodeLess {
-    bool operator()(const Quadrant& a, const Quadrant& b) const {
-      return Quadrant::compare_position(a, b) < 0;
+    bool operator()(const QuadrantNode& a, const QuadrantNode& b) const {
+      return QuadrantNode::compare_position(a, b) < 0;
     }
   };
 
-  std::set<Quadrant, NodeLess> quads;
+  std::set<QuadrantNode, NodeLess> quads;
 };
 
 }  // namespace xcgd

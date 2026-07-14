@@ -104,7 +104,7 @@ class PolyBasis2D {
  public:
   PolyBasis2D(uint32_t exclude = uint32_t(0)) : exclude(exclude) {}
 
-  static constexpr int MAX_BASIS = 18;
+  static constexpr int MAX_BASIS = 20;
   uint32_t exclude;
 
   template <class T>
@@ -148,6 +148,10 @@ class PolyBasis2D {
     p[16] = xp[2] * yp[3];
     p[17] = xp[3] * yp[3];
 
+    // Additional terms from Q4
+    p[18] = xp[4] * yp[1];
+    p[19] = xp[1] * yp[4];
+
     // Include basis values where the exclude bit is zero
     int counter = 0;
     for (int i = 0; i < MAX_BASIS; i++) {
@@ -165,7 +169,7 @@ class PolyBasisDeriv2D {
  public:
   PolyBasisDeriv2D(uint32_t exclude = uint32_t(0)) : exclude(exclude) {}
 
-  static constexpr int MAX_BASIS = 18;
+  static constexpr int MAX_BASIS = 20;
   uint32_t exclude;
 
   template <class T>
@@ -265,6 +269,16 @@ class PolyBasisDeriv2D {
     py[15] = xp[3] * dyp[2];
     py[16] = xp[2] * dyp[3];
     py[17] = xp[3] * dyp[3];
+
+    // Additional terms from Q4
+    p[18] = xp[4] * yp[1];
+    p[19] = xp[1] * yp[4];
+
+    px[18] = dxp[4] * yp[1];
+    px[19] = yp[4];
+
+    py[18] = xp[4];
+    py[19] = xp[1] * dyp[4];
 
     // Include basis values where the exclude bit is zero
     int counter = 0;

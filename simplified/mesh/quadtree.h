@@ -51,7 +51,7 @@ class Quadtree {
       const std::int32_t hmax = 1 << Quadrant::MAX_LEVEL;
 
       for (int k = 0; k < size; k++) {
-        const std::int32_t h = 1 << (Quadrant::MAX_LEVEL - quads[k].level);
+        const std::int32_t h = quads[k].get_size();
 
         // Set the point
         for (int jj = 0; jj < 2; jj++) {
@@ -172,7 +172,7 @@ class Quadtree {
             q.info = 0;
 
             // Compute the new side-length of the quadrant
-            const std::int32_t h = 1 << (Quadrant::MAX_LEVEL - q.level);
+            const std::int32_t h = q.get_size();
             q.x = q.x - (q.x % h);
             q.y = q.y - (q.y % h);
             hash.add_quadrant(q);
@@ -203,7 +203,7 @@ class Quadtree {
             q.info = 0;
 
             // Compute the new side-length of the quadrant
-            const std::int32_t h = 1 << (Quadrant::MAX_LEVEL - q.level);
+            const std::int32_t h = q.get_size();
             std::int32_t x = q.x - (q.x % h);
             std::int32_t y = q.y - (q.y % h);
             for (int ii = 0; ii < ref; ii++) {
@@ -291,33 +291,40 @@ class Quadtree {
   }
 
   /**
-   * @brief Create the connectivity for the given quadtree
+   * @brief Get the quadrants from the mesh
    *
-   * @param degree Degree of the mesh to create
-   * @return
+   * @return std::shared_ptr<QuadrantArray>
    */
-  std::vector<int> create_connectivity(int degree = 1) {
-    if (degree < 1) {
-      degree = 1;
+  std::shared_ptr<QuadrantArray> get_quadrants() { return quadrants; }
+
+  /**
+   * @brief Create a list of local nodes
+   *
+   * The level variable is used to store the number of nodes associated
+   * with the group of nodes.
+   *
+   * @param degree Polynomial degree of the elements
+   * @return std::shared_ptr<NodeArray> Array of nodes
+   */
+  std::shared_ptr<NodeArray> create_nodes(int degree) {
+    // Allocate the array of elements
+    QuadrantArray& quads = *quadrants;
+
+    // Create all the nodes/edges/faces
+    NodeHash hash;
+
+    // First of all, add all the nodes from the local elements
+    // on this processor
+    for (int i = 0; i < quads.size(); i++) {
+      for (int jj = 0; jj < degree + 1; jj++) {
+        for (int ii = 0; ii < degree + 1; ii++) {
+          QuadrantNode node = quads[i].get_node(degree, ii, jj);
+          hash.add_node(node);
+        }
+      }
     }
 
-    // Create the nodes
-    std::shared_ptr<NodeArray> node_array = create_nodes(degree);
-    NodeArray& nodes = *node_array;
-
-    // Create offsets into the array of nodes
-    std::vector<int> node_offsets(nodes.size());
-
-    for (int i = 0, local_size = 0; i < nodes.size(); i++) {
-      node_offsets[i] = local_size;
-      local_size += nodes[i].level;
-    }
-
-    // Allocate the connectivity
-    std::vector<int> conn;
-    compute_connectivity(degree, nodes, node_offsets, conn);
-
-    return conn;
+    return hash.to_array();
   }
 
  private:
@@ -365,6 +372,10 @@ class Quadtree {
     }
   }
 
+  /**
+   * @brief Label the dependent edges of the two quadrants adjacent to an edge
+   * with hanging nodes
+   */
   void label_dependent_edges() {
     QuadrantArray& quads = *quadrants;
 
@@ -385,7 +396,8 @@ class Quadtree {
       // adjacent edge
       for (int edge_index = 0; edge_index < 4; edge_index++) {
         for (int k = 0; k < 2; k++) {
-          // Get the quadrant and increase the level
+          // Get the quadrant and increase the level. p is now one level more
+          // refined than quads[i].
           Quadrant p = quads[i];
           p.level += 1;
 
@@ -402,299 +414,11 @@ class Quadtree {
             if (dep) {
               // Set the info flag to the corresponding adjacent index
               dep->info |= 1 << edge_index_to_adjacent[edge_index];
+
+              // Apply a label to the coarser source quadrant, indicating
+              // the quadrant
+              quads[i].info |= 1 << (4 + edge_index);
             }
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * @brief Create a list of local nodes
-   *
-   * The level variable is used to store the number of nodes associated
-   * with the group of nodes.
-   *
-   * @param degree Polynomial degree of the elements
-   * @return std::shared_ptr<NodeArray> Array of nodes
-   */
-  std::shared_ptr<NodeArray> create_nodes(int degree) {
-    // Allocate the array of elements
-    QuadrantArray& quads = *quadrants;
-
-    // Create all the nodes/edges/faces
-    bool use_node_index = true;
-    NodeHash hash;
-
-    // Set the node, edge and face label
-    std::int16_t node_label = 0, edge_label = 0, face_label = 0;
-    if (degree <= 2) {
-      node_label = Quadrant::NODE_LABEL;
-      edge_label = Quadrant::NODE_LABEL;
-      face_label = Quadrant::NODE_LABEL;
-    } else {
-      node_label = Quadrant::NODE_LABEL;
-      edge_label = Quadrant::EDGE_LABEL;
-      face_label = Quadrant::FACE_LABEL;
-    }
-
-    // Set the node locations
-    if (degree == 1) {
-      // First of all, add all the nodes from the local elements
-      // on this processor
-      for (int i = 0; i < quads.size(); i++) {
-        const int32_t h = 1 << (Quadrant::MAX_LEVEL - quads[i].level);
-        for (int jj = 0; jj < 2; jj++) {
-          for (int ii = 0; ii < 2; ii++) {
-            Quadrant node;
-            node.level = 1;
-            node.x = quads[i].x + h * ii;
-            node.y = quads[i].y + h * jj;
-            node.tag = 0;
-            node.info = node_label;
-            hash.add_node(node);
-          }
-        }
-      }
-
-      // Add the nodes that the dependent nodes depend on
-      for (int i = 0; i < quads.size(); i++) {
-        // Add the external nodes from dependent edges
-        if (quads[i].info) {
-          for (int edge_index = 0; edge_index < 4; edge_index++) {
-            if (quads[i].info & 1 << edge_index) {
-              Quadrant parent = quads[i].parent();
-
-              const int32_t hp = 1 << (Quadrant::MAX_LEVEL - parent.level);
-              for (int ii = 0; ii < 2; ii++) {
-                Quadrant node;
-                node.level = 1;
-                if (edge_index < 2) {
-                  node.x = parent.x + hp * (edge_index % 2);
-                  node.y = parent.y + hp * ii;
-                } else {
-                  node.x = parent.x + hp * ii;
-                  node.y = parent.y + hp * (edge_index % 2);
-                }
-                // Assign a negative rank index for now...
-                node.tag = -1;
-                node.info = node_label;
-                hash.add_node(node);
-              }
-            }
-          }
-        }
-      }
-    } else {
-      for (int i = 0; i < quads.size(); i++) {
-        const int32_t h = 1 << (Quadrant::MAX_LEVEL - quads[i].level - 1);
-        for (int jj = 0; jj < 3; jj++) {
-          for (int ii = 0; ii < 3; ii++) {
-            Quadrant node;
-            node.x = quads[i].x + h * ii;
-            node.y = quads[i].y + h * jj;
-            if ((ii == 0 || ii == 2) && (jj == 0 || jj == 2)) {
-              node.level = 1;
-              node.info = node_label;
-            } else if (ii == 0 || ii == 2 || jj == 0 || jj == 2) {
-              node.level = degree - 1;
-              node.info = edge_label;
-            } else {
-              node.level = (degree - 1) * (degree - 1);
-              node.info = face_label;
-            }
-            node.tag = 0;
-            hash.add_node(node);
-          }
-        }
-      }
-
-      // Add the nodes from the dependent edges
-      for (int i = 0; i < quads.size(); i++) {
-        if (quads[i].info) {
-          const int32_t h = 1 << (Quadrant::MAX_LEVEL - quads[i].level);
-
-          for (int edge_index = 0; edge_index < 4; edge_index++) {
-            if (quads[i].info & 1 << edge_index) {
-              Quadrant parent = quads[i].parent();
-
-              for (int ii = 0; ii < 3; ii++) {
-                Quadrant node;
-
-                node.level = 0;
-
-                // Set the location of the edge
-                if (edge_index < 2) {
-                  node.x = parent.x + 2 * h * (edge_index % 2);
-                  node.y = parent.y + h * ii;
-                } else {
-                  node.x = parent.x + h * ii;
-                  node.y = parent.y + 2 * h * (edge_index % 2);
-                }
-
-                if (ii == 0 || ii == 2) {
-                  node.level = 1;
-                  node.info = node_label;
-                } else {
-                  // For a dependent-edge which connects to another element with
-                  // fewer nodes, the number of independent dof drops because
-                  // some nodes are shared, but not all
-                  node.level = degree - 2;
-                  node.info = edge_label;
-                }
-                // Assign the negative rank to this processor
-                node.tag = 0;
-                hash.add_node(node);
-              }
-            }
-          }
-        }
-      }
-    }
-
-    return hash.to_array();
-  }
-
-  /**
-   * @brief Build the connectivity arrays for each element
-   *
-   * @param degree Element degree
-   * @param nodes Node array associated with each node group
-   * @param node_offsets Offset into the node
-   * @param conn Generated connectivity array
-   */
-  void compute_connectivity(int degree, const NodeArray& nodes,
-                            const std::vector<int>& node_offsets,
-                            std::vector<int>& conn) {
-    QuadrantArray& quads = *quadrants;
-
-    // Set the node, edge and face label
-    std::int16_t node_label = 0, edge_label = 0, face_label = 0;
-    if (degree <= 2) {
-      node_label = Quadrant::NODE_LABEL;
-      edge_label = Quadrant::NODE_LABEL;
-      face_label = Quadrant::NODE_LABEL;
-    } else {
-      node_label = Quadrant::NODE_LABEL;
-      edge_label = Quadrant::EDGE_LABEL;
-      face_label = Quadrant::FACE_LABEL;
-    }
-
-    // Allocate the connectivity
-    std::size_t size = (degree + 1) * (degree + 1) * quads.size();
-    conn.resize(size);
-
-    if (degree <= 2) {
-      for (int i = 0; i < quads.size(); i++) {
-        int* c = &conn[(degree + 1) * (degree + 1) * i];
-        const int32_t h = 1 << (Quadrant::MAX_LEVEL - quads[i].level - 1);
-
-        // Loop over the element nodes
-        for (int corner_index = 0; corner_index < 4; corner_index++) {
-          Quadrant node;
-          node.x = quads[i].x + 2 * h * (corner_index % 2);
-          node.y = quads[i].y + 2 * h * (corner_index / 2);
-          node.info = node_label;
-
-          int index = nodes.get_index(node);
-          int offset = degree * (corner_index % 2) +
-                       degree * (degree + 1) * (corner_index / 2);
-          c[offset] = node_offsets[index];
-        }
-
-        if (degree == 2) {
-          // Loop over the edges and get the owners
-          for (int edge_index = 0; edge_index < 4; edge_index++) {
-            Quadrant node;
-            if (edge_index < 2) {
-              node.x = quads[i].x + 2 * h * (edge_index % 2);
-              node.y = quads[i].y + h;
-            } else {
-              node.x = quads[i].x + h;
-              node.y = quads[i].y + 2 * h * (edge_index % 2);
-            }
-            node.info = edge_label;
-
-            int index = nodes.get_index(node);
-            if (edge_index < 2) {
-              int offset = (degree + 1) + degree * edge_index;
-              c[offset] = node_offsets[index];
-            } else {
-              int offset = 1 + degree * (degree + 1) * (edge_index % 2);
-              c[offset] = node_offsets[index];
-            }
-          }
-
-          Quadrant node;
-          node.x = quads[i].x + h;
-          node.y = quads[i].y + h;
-          node.info = face_label;
-          int index = nodes.get_index(node);
-          c[4] = node_offsets[index];
-        }
-      }
-    } else {
-      // Loop over all the elements and assign the local index owners
-      // for each node
-      for (int i = 0; i < quads.size(); i++) {
-        int* c = &conn[(degree + 1) * (degree + 1) * i];
-
-        // Compute the half-edge length of the quadrant
-        const int32_t h = 1 << (Quadrant::MAX_LEVEL - quads[i].level - 1);
-
-        // Loop over the corner nodes
-        for (int corner_index = 0; corner_index < 4; corner_index++) {
-          // Compute the offset to the local node
-          int offset = degree * (corner_index % 2) +
-                       degree * (degree + 1) * (corner_index / 2);
-
-          // Find the node at the corner to determine the owner
-          Quadrant node;
-          node.x = quads[i].x + 2 * h * (corner_index % 2);
-          node.y = quads[i].y + 2 * h * (corner_index / 2);
-          node.info = node_label;
-          int index = nodes.get_index(node);
-          c[offset] = node_offsets[index];
-        }
-
-        // Loop over the edges and get the owners
-        for (int edge_index = 0; edge_index < 4; edge_index++) {
-          Quadrant edge;
-          if (edge_index < 2) {
-            edge.x = quads[i].x + 2 * h * (edge_index % 2);
-            edge.y = quads[i].y + h;
-          } else {
-            edge.y = quads[i].y + 2 * h * (edge_index % 2);
-            edge.x = quads[i].x + h;
-          }
-          edge.info = edge_label;
-          int index = nodes.get_index(edge);
-
-          if (edge_index < 2) {
-            for (int k = 1; k < degree; k++) {
-              int offset = k * (degree + 1) + degree * edge_index;
-              c[offset] = node_offsets[index] + k - 1;
-            }
-          } else {
-            for (int k = 1; k < degree; k++) {
-              int offset = k + degree * (degree + 1) * (edge_index % 2);
-              c[offset] = node_offsets[index] + k - 1;
-            }
-          }
-        }
-
-        // Loop over the face owners
-        Quadrant face;
-        face.x = quads[i].x + h;
-        face.y = quads[i].y + h;
-        face.info = face_label;
-        int index = nodes.get_index(face);
-
-        for (int jj = 1; jj < degree; jj++) {
-          for (int ii = 1; ii < degree; ii++) {
-            int offset = ii + jj * (degree + 1);
-            c[offset] =
-                node_offsets[index] + (ii - 1) + (jj - 1) * (degree - 1);
           }
         }
       }

@@ -194,8 +194,8 @@ class Vandermonde2D {
   T x0, y0;
   T delta;
   int num_nodes;
-  const Basis& basis;
-  const BasisDeriv& deriv;
+  Basis basis;
+  BasisDeriv deriv;
 
   // Storage for the factorization of V
   std::vector<T> V;

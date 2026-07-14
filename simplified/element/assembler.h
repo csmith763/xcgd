@@ -173,7 +173,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -240,7 +240,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -311,7 +311,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -457,7 +457,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);
@@ -519,7 +519,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
       mesh->eval_basis(elem, num_quad_points, points, Nd);
 
       // Get the node locations
-      mesh->get_node_points(elem, X);
+      mesh->get_points(elem, X);
 
       // Get the variables associated with the nodes
       get_element_vars(num_nodes, nodes, dof, elem_dof);

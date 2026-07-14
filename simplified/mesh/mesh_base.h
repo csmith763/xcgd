@@ -15,7 +15,7 @@ class MeshBase {
   virtual int get_max_element_nodes() const = 0;
   virtual int get_max_num_quadrature_points() const = 0;
   virtual int get_nodes(int elem, std::vector<int>& nodes) const = 0;
-  virtual void get_node_points(int elem, std::vector<T>& X) const = 0;
+  virtual void get_points(int elem, std::vector<T>& X) const = 0;
   virtual int get_quadrature(int elem, std::vector<T>& weights,
                              std::vector<T>& points,
                              std::vector<T>& normals) const = 0;
