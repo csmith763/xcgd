@@ -2,16 +2,19 @@ import xcgd
 import numpy as np
 
 tree = xcgd.Quadtree()
-print("quadtree", flush=True)
 
 # Uniformly refine the mesh to have 2**5 = 32 elements along each edge
-tree.refine([2])
-print("refine", flush=True)
+tree.refine([4])
 tree.balance()
-print("balance", flush=True)
 
 # Duplicate the quadtree
 source = tree.duplicate()
+
+source.to_vtk("source.vtk")
+
+for i in range(3):
+    tree.refine()
+    tree.balance()  # NOTE: need to balance each time after refine is called
 
 # Write out the quadtree
 tree.to_vtk("test_tree_balanced.vtk")

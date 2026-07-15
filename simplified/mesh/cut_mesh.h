@@ -315,6 +315,46 @@ class CartesianCutMesh
 
   std::vector<T>& get_lsf() { return lsf; }
 
+  // Return the Cartesian (x, y) coordinates of every node in the given cut
+  // domain, ordered by the local (analysis) node index. The returned vector is
+  // flat with layout [x0, y0, x1, y1, ...], so node i has coordinates
+  // (X[2 * i], X[2 * i + 1]). This ordering matches the node numbering used by
+  // the assembler and the entries of any solution/eigenvector defined on the
+  // corresponding mesh.
+  std::vector<T> get_node_locations(CutDomain domain) const {
+    int num_nodes = get_max_node_index(domain);
+    std::vector<T> X(2 * static_cast<std::size_t>(num_nodes), T(0));
+
+    // Interior nodes are present in every domain that contains interior or
+    // interface elements.
+    for (std::size_t g = 0; g < interior_node_map.size(); g++) {
+      int local = interior_node_map[g];
+      if (local >= 0 && local < num_nodes) {
+        T x, y;
+        mesh->get_node_location(static_cast<int>(g), x, y);
+        X[2 * local] = x;
+        X[2 * local + 1] = y;
+      }
+    }
+
+    // Exterior nodes are appended after the interior nodes for the exterior and
+    // interface domains.
+    if (domain == CutDomain::EXTERIOR_VOLUME ||
+        domain == CutDomain::INTERFACE_BOUNDARY) {
+      for (std::size_t g = 0; g < exterior_node_map.size(); g++) {
+        int local = exterior_node_map[g];
+        if (local >= 0 && local < num_nodes) {
+          T x, y;
+          mesh->get_node_location(static_cast<int>(g), x, y);
+          X[2 * local] = x;
+          X[2 * local + 1] = y;
+        }
+      }
+    }
+
+    return X;
+  }
+
   void update() {
     // First update the tags for whether the cell is interior, exterior or
     // an interface element

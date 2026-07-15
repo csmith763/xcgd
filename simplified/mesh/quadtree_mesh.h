@@ -19,9 +19,6 @@ class QuadtreeMesh : public MeshBase<T> {
 
   QuadtreeMesh(std::shared_ptr<Quadtree> tree, T length)
       : tree(tree), length(length) {
-    // Create the connectivity on the underlying quadtree
-    nodes = tree->create_nodes(mesh_degree);
-
     // Set the quadratures
     p3[0] = -sqrt(3.0 / 5.0);
     p3[1] = 0.0;
@@ -59,6 +56,9 @@ class QuadtreeMesh : public MeshBase<T> {
   }
 
   void update() {
+    // Create the connectivity on the underlying quadtree
+    nodes = tree->create_nodes(mesh_degree);
+
     QuadrantArray& quads = *tree->get_quadrants();
     int num_elements = quads.size();
 

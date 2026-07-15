@@ -53,6 +53,20 @@ class CartesianMesh : public MeshBase<T> {
     y = delta * j;
   }
 
+  // Locations of every node, packed as [x0, y0, x1, y1, ...] in the natural
+  // node ordering (node g = i + j * (nx + 1)).
+  std::vector<T> get_node_locations() const {
+    int num_nodes = get_max_node_index();
+    std::vector<T> X(2 * static_cast<std::size_t>(num_nodes));
+    for (int g = 0; g < num_nodes; g++) {
+      T x, y;
+      get_node_location(g, x, y);
+      X[2 * g] = x;
+      X[2 * g + 1] = y;
+    }
+    return X;
+  }
+
   // Get an edge line - (i, j) of the node and the direction (di, dj)
   EdgeLine get_edge_line(int elem, EdgeSide edge) const {
     int i = elem % nx;

@@ -13,3 +13,6 @@ test
 
 # Profiler trace
 *.trace
+*.so
+*__pycache__/
+*.pdf

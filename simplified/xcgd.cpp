@@ -41,7 +41,25 @@ PYBIND11_MODULE(xcgd, m) {
   py::class_<xcgd::CartesianMesh<T>, xcgd::MeshBase<T>,
              std::shared_ptr<xcgd::CartesianMesh<T>>>(m, "CartesianMesh")
       .def(py::init<int, int, T>(), py::arg("nx"), py::arg("ny"),
-           py::arg("delta"));
+           py::arg("delta"))
+      .def("get_node_locations", [](xcgd::CartesianMesh<T>& self) {
+        std::vector<T> X = self.get_node_locations();
+        py::ssize_t num_nodes = static_cast<py::ssize_t>(X.size() / 2);
+        py::array_t<T> arr({num_nodes, py::ssize_t(2)});
+        auto r = arr.template mutable_unchecked<2>();
+        for (py::ssize_t i = 0; i < num_nodes; i++) {
+          r(i, 0) = X[2 * i];
+          r(i, 1) = X[2 * i + 1];
+        }
+        return arr;
+      });
+
+  // Enum identifying which sub-domain of the cut mesh to query. This must be
+  // registered before it is used as a default argument below.
+  py::enum_<xcgd::CutDomain>(m, "CutDomain")
+      .value("INTERIOR_VOLUME", xcgd::CutDomain::INTERIOR_VOLUME)
+      .value("EXTERIOR_VOLUME", xcgd::CutDomain::EXTERIOR_VOLUME)
+      .value("INTERFACE_BOUNDARY", xcgd::CutDomain::INTERFACE_BOUNDARY);
 
   py::class_<xcgd::CartesianCutMesh<T>,
              std::shared_ptr<xcgd::CartesianCutMesh<T>>>(m, "CartesianCutMesh")
@@ -54,6 +72,20 @@ PYBIND11_MODULE(xcgd, m) {
             return make_vector_view(self.get_lsf(), py::cast(&self));
           },
           py::return_value_policy::reference_internal)
+      .def(
+          "get_node_locations",
+          [](xcgd::CartesianCutMesh<T>& self, xcgd::CutDomain domain) {
+            std::vector<T> X = self.get_node_locations(domain);
+            py::ssize_t num_nodes = static_cast<py::ssize_t>(X.size() / 2);
+            py::array_t<T> arr({num_nodes, py::ssize_t(2)});
+            auto r = arr.template mutable_unchecked<2>();
+            for (py::ssize_t i = 0; i < num_nodes; i++) {
+              r(i, 0) = X[2 * i];
+              r(i, 1) = X[2 * i + 1];
+            }
+            return arr;
+          },
+          py::arg("domain") = xcgd::CutDomain::INTERIOR_VOLUME)
       .def("create_interior_mesh",
            &xcgd::CartesianCutMesh<T>::create_interior_mesh)
       .def("create_exterior_mesh",
