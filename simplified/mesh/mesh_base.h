@@ -28,10 +28,14 @@ class MeshBase {
   virtual int get_quadrature_derivative(int elem, std::vector<T>& dwdx,
                                         std::vector<T>& dpdx,
                                         std::vector<T>& dndx, int& ndvs,
-                                        std::vector<int>& dvs) {
+                                        std::vector<int>& dvs) const {
     ndvs = 0;
     return 0;
   }
+  virtual void reverse_eval_basis(int elem, int num_quad_points,
+                                  const std::vector<T>& pts,
+                                  const std::vector<T>& bNd,
+                                  std::vector<T>& bpts) const {}
 };
 
 }  // namespace xcgd

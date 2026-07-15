@@ -193,7 +193,6 @@ class QuadtreeCutMesh
       if (domain == CutDomain::INTERIOR_VOLUME) {
         if (elem < num_interior) {
           mesh->get_base_data(interior_elems[elem], x0, y0, delta);
-
           exclude = interior.exclude[elem];
           npts = interior.stencil[elem].size();
           X = interior.X[elem].data();
@@ -231,6 +230,75 @@ class QuadtreeCutMesh
                              detail::PolyBasis2D(exclude),
                              detail::PolyBasisDeriv2D(exclude));
         interp.eval_basis(num_quad_points, pts.data(), Nd.data());
+      }
+    } else {
+      T x0, y0, delta;
+      mesh->get_base_data(interface_elems[elem], x0, y0, delta);
+
+      uint32_t exclude_int = interface_interior.exclude[elem];
+      std::size_t npts_int = interface_interior.stencil[elem].size();
+      const T* X_int = interface_interior.X[elem].data();
+
+      uint32_t exclude_ext = interface_exterior.exclude[elem];
+      std::size_t npts_ext = interface_exterior.stencil[elem].size();
+      const T* X_ext = interface_exterior.X[elem].data();
+
+      // Need to figure out how to do this..
+    }
+  }
+
+  void reverse_eval_basis(CutDomain domain, int elem, int num_quad_points,
+                          const std::vector<T>& pts, const std::vector<T>& bNd,
+                          std::vector<T> bpts) const {
+    if (domain == CutDomain::INTERIOR_VOLUME ||
+        domain == CutDomain::EXTERIOR_VOLUME) {
+      T x0, y0, delta;
+      uint32_t exclude(0);
+      std::size_t npts = 0;
+      const T* X;
+
+      if (domain == CutDomain::INTERIOR_VOLUME) {
+        if (elem < num_interior) {
+          mesh->get_base_data(interior_elems[elem], x0, y0, delta);
+          exclude = interior.exclude[elem];
+          npts = interior.stencil[elem].size();
+          X = interior.X[elem].data();
+        } else {
+          int k = elem - num_interior;
+          mesh->get_base_data(interface_elems[k], x0, y0, delta);
+          exclude = interface_interior.exclude[k];
+          npts = interface_interior.stencil[k].size();
+          X = interface_interior.X[k].data();
+        }
+      } else if (domain == CutDomain::EXTERIOR_VOLUME) {
+        if (elem < num_exterior) {
+          mesh->get_base_data(exterior_elems[elem], x0, y0, delta);
+          exclude = exterior.exclude[elem];
+          npts = exterior.stencil[elem].size();
+          X = exterior.X[elem].data();
+        } else {
+          int k = elem - num_exterior;
+          mesh->get_base_data(interface_elems[k], x0, y0, delta);
+          exclude = interface_exterior.exclude[k];
+          npts = interface_exterior.stencil[k].size();
+          X = interface_exterior.X[k].data();
+        }
+      }
+
+      if (exclude == uint32_t(0)) {
+        int nnodes = static_cast<int>(npts);
+        Vandermonde2D interp(x0, y0, delta, nnodes, X,
+                             detail::RegularPolyBasis2D{},
+                             detail::RegularPolyBasisDeriv2D{});
+        interp.reverse_eval_basis(num_quad_points, pts.data(), bNd.data(),
+                                  bpts.data());
+      } else {
+        int nnodes = static_cast<int>(npts);
+        Vandermonde2D interp(x0, y0, delta, nnodes, X,
+                             detail::PolyBasis2D(exclude),
+                             detail::PolyBasisDeriv2D(exclude));
+        interp.reverse_eval_basis(num_quad_points, pts.data(), bNd.data(),
+                                  bpts.data());
       }
     } else {
       T x0, y0, delta;
@@ -1014,6 +1082,25 @@ class CutQuadMeshComponent final : public MeshBase<T> {
   void eval_basis(int elem, int num_quad_points, const std::vector<T>& pts,
                   std::vector<T>& Nd) const override {
     mesh->eval_basis(domain, elem, num_quad_points, pts, Nd);
+  }
+
+  int get_max_design_index() const override {
+    return mesh->get_max_design_index();
+  }
+  int get_max_element_design_vars() const override {
+    return mesh->get_max_element_design_vars();
+  }
+  int get_quadrature_derivative(int elem, std::vector<T>& dwdx,
+                                std::vector<T>& dpdx, std::vector<T>& dndx,
+                                int& ndvs,
+                                std::vector<int>& dvs) const override {
+    return mesh->get_quadrature_derivative(domain, elem, dwdx, dpdx, dndx, ndvs,
+                                           dvs);
+  }
+  void reverse_eval_basis(int elem, int num_quad_points,
+                          const std::vector<T>& pts, const std::vector<T>& bNd,
+                          std::vector<T>& bpts) const override {
+    mesh->reverse_eval_basis(domain, elem, num_quad_points, pts, bNd, bpts);
   }
 
  private:

@@ -367,6 +367,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
     // Arrays for storing the basis functions and derivatives
     std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
+    std::vector<T> bNd((1 + spatial_dim) * max_nodes * max_quad_pts);
 
     for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
       // Add the derivative contributions
@@ -390,6 +391,13 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
         // Get the variables associated with the nodes
         get_element_vars(num_nodes, nodes, dof, elem_dof);
+
+        // Zero the contributions to the gradient from this element
+        std::fill(bpoints.begin(),
+                  bpoints.begin() + spatial_dim * num_quad_points, T(0));
+
+        int n_size = num_quad_points * (num_nodes * (1 + spatial_dim));
+        std::fill(bNd.begin(), bNd.begin() + n_size, T(0));
 
         // Perform the quadrature
         for (int i = 0; i < num_quad_points; i++) {
@@ -440,12 +448,40 @@ class MeshAssembler : public MeshAssemblerBase<T> {
           // Seed the derivatives for the reverse part of the computation
           bweights[i] = value.deriv[0];
 
-          // // Seed the normal
-          // beweight typename Physics::template location_t<ad_t> xloc;
-          // typename Physics::template normal_t<ad_t> normal;
-          // typename Physics::template input_t<ad_t> vals;
-          // typename Physics::template gradient_t<ad_t> grad;
+          for (int j = 0; j < spatial_dim; j++) {
+            bnormals[i * spatial_dim + j] = value.deriv[1 + spatial_dim + j];
+          }
+
+          // Seed the remaining values
+          typename Physics::template location_t<T> bxloc;
+          typename Physics::template input_t<T> bvals;
+          typename Physics::template gradient_t<T> bgrad;
+
+          for (int j = 0; j < spatial_dim; j++) {
+            bxloc[j] = value.deriv[1 + j];
+          }
+
+          for (int j = 0; j < dof_per_node; j++) {
+            constexpr int offset = 1 + 2 * spatial_dim;
+            bvals[j] = value.deriv[offset + j];
+          }
+
+          for (int j = 0; j < spatial_dim * dof_per_node; j++) {
+            constexpr int offset = 1 + 2 * spatial_dim + dof_per_node;
+            bgrad[j] = value.deriv[offset + j];
+          }
+
+          T* bNptr = &bNd[(spatial_dim + 1) * num_nodes * i];
+          T* bNxptr = &bNd[(spatial_dim + 1) * num_nodes * i + num_nodes];
+          add_reverse_interp_values(spatial_dim, num_nodes, X, bxloc, bNptr);
+          add_reverse_interp_values(dof_per_node, num_nodes, elem_dof, bvals,
+                                    bNptr);
+          add_reverse_interp_gradient(dof_per_node, num_nodes, elem_dof, bgrad,
+                                      bNxptr);
         }
+
+        // Perform the reverse mode evaluation of the basis function
+        mesh->reverse_eval_basis(elem, num_quad_points, points, bNd, bpoints);
 
         // Take the product to complete the derivatives
         for (int i = 0; i < ndvs; i++) {
@@ -777,6 +813,34 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
             elem_jac[nd * row + col] += value;
           }
+        }
+      }
+    }
+  }
+
+  template <class Output>
+  void add_reverse_interp_values(const int dim, const int num_nodes,
+                                 std::vector<T>& vals, const Output& out,
+                                 T* bN) const {
+    for (int i = 0; i < num_nodes; i++) {
+      for (int k = 0; k < dim; k++) {
+        // out[k] += N[i] * vals[dim * i + k];
+        bN[i] += out[k] * vals[dim * i + k];
+      }
+    }
+  }
+
+  template <class Output>
+  void add_reverse_interp_gradient(const int dim, const int num_nodes,
+                                   std::vector<T>& vals, Output& out,
+                                   T* bNx) const {
+    for (int i = 0; i < spatial_dim; i++) {
+      for (int j = 0; j < dim; j++) {
+        for (int k = 0; k < num_nodes; k++) {
+          // out[i + spatial_dim * j] += Nx[k + i * num_nodes] * vals[dim * k +
+          // j];
+          bNx[k + i * num_nodes] +=
+              out[i + spatial_dim * j] * vals[dim * k + j];
         }
       }
     }

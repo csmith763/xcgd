@@ -123,11 +123,11 @@ mass_assembler = xcgd.Assembler([xcgd.ElasticityMass2DAssembler(interior_mesh, m
 stiffness_assembler.zero_derivative()
 stiffness_assembler.add_functional_derivative()
 
+stiffness_assembler.update()
 adjoint = stiffness_assembler.get_adjoint()
 dfdx = stiffness_assembler.get_dfdx()
 
 print(dfdx)
-
 
 # Solve the frequency problem using the Galerkin-difference approach
 N = 40

@@ -11,7 +11,9 @@ template <typename T>
 class Assembler {
  public:
   Assembler(std::vector<std::shared_ptr<MeshAssemblerBase<T>>> assemblers)
-      : assemblers(assemblers) {}
+      : assemblers(assemblers) {
+    update();
+  }
 
   void update() {
     num_dof = 0;

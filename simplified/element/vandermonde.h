@@ -269,6 +269,9 @@ class Vandermonde2D {
     detail::Lapack<T>::getrs('N', num_nodes, nrhs, V.data(), ipiv.data(), Nd);
   }
 
+  void reverse_eval_basis(int num_points, const T* pts, const T* bNd,
+                          T* bpts) const {}
+
  private:
   T x0, y0;
   T delta;
