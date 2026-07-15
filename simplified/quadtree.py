@@ -11,50 +11,49 @@ from icecream import ic
 # from flume_topology.utils.mesh_utils import create_beam_domain
 import niceplots
 
+# def solve_frequency_problem(
+#     stiffness_assembler,
+#     mass_assembler,
+#     sigma=0.0,
+#     N=10,
+#     tol=1e-14,
+#     eig_atol=1e-5,
+# ):
+#     """
+#     Solves the natural frequency problem using eigd with Galerkin-difference for the numerical solution.
+#     """
 
-def solve_frequency_problem(
-    stiffness_assembler,
-    mass_assembler,
-    sigma=0.0,
-    N=10,
-    tol=1e-14,
-    eig_atol=1e-5,
-):
-    """
-    Solves the natural frequency problem using eigd with Galerkin-difference for the numerical solution.
-    """
+#     # Update the sparsity patterns for the stiffness and mass matrices
+#     stiffness_assembler.update()
+#     mass_assembler.update()
 
-    # Update the sparsity patterns for the stiffness and mass matrices
-    stiffness_assembler.update()
-    mass_assembler.update()
+#     # # Evaluate the residual and the Jacobian
+#     stiffness_assembler.eval_jacobian()
+#     mass_assembler.eval_jacobian()
 
-    # # Evaluate the residual and the Jacobian
-    stiffness_assembler.eval_jacobian()
-    mass_assembler.eval_jacobian()
+#     # Retrieve the Jacobian we just computed
+#     kcsr = stiffness_assembler.get_jacobian()
+#     mcsr = mass_assembler.get_jacobian()
 
-    # Retrieve the Jacobian we just computed
-    kcsr = stiffness_assembler.get_jacobian()
-    mcsr = mass_assembler.get_jacobian()
+#     # Construct SciPy CSR matrices
+#     K_sp = csr_matrix((kcsr.data, kcsr.cols, kcsr.rowp), shape=(kcsr.nrows, kcsr.nrows))
+#     M_sp = csr_matrix((mcsr.data, mcsr.cols, mcsr.rowp), shape=(mcsr.nrows, mcsr.nrows))
 
-    # Construct SciPy CSR matrices
-    K_sp = csr_matrix((kcsr.data, kcsr.cols, kcsr.rowp), shape=(kcsr.nrows, kcsr.nrows))
-    M_sp = csr_matrix((mcsr.data, mcsr.cols, mcsr.rowp), shape=(mcsr.nrows, mcsr.nrows))
+#     # Compute the shifted operator
+#     mat = K_sp - sigma * M_sp
+#     mat = (mat + mat.T) * 0.5
 
-    # Compute the shifted operator
-    mat = K_sp - sigma * M_sp
-    mat = (mat + mat.T) * 0.5
+#     # Construct the operator
+#     factor = make_operator(mat)
 
-    # Construct the operator
-    factor = make_operator(mat)
+#     # Construct the eigensolver
+#     m = max(2 * N + 1, 60)
+#     eig_solver = IRAM(N=N, m=m, eig_atol=eig_atol, tol=tol)
 
-    # Construct the eigensolver
-    m = max(2 * N + 1, 60)
-    eig_solver = IRAM(N=N, m=m, eig_atol=eig_atol, tol=tol)
+#     # Solve the eigenvalue problem
+#     lam, Q = eig_solver.solve(A=K_sp, B=M_sp, factor=factor, sigma=sigma)
 
-    # Solve the eigenvalue problem
-    lam, Q = eig_solver.solve(A=K_sp, B=M_sp, factor=factor, sigma=sigma)
-
-    return lam, Q
+#     return lam, Q
 
 
 tree = xcgd.Quadtree()
@@ -68,7 +67,7 @@ source = tree.duplicate()
 
 source.to_vtk("source.vtk")
 
-for i in range(3):
+for i in range(2):
     tree.refine()
     tree.balance()  # NOTE: need to balance each time after refine is called
 
@@ -95,7 +94,6 @@ lsf[:] = (X[::2] - x0) ** 2 + (X[1::2] - y0) ** 2 - r0**2
 
 cut_mesh.update()
 interface_elems = cut_mesh.get_interface_elements()
-
 interior_elems = cut_mesh.get_interior_elements()
 
 refinement = np.zeros(tree.size(), dtype=np.int32)
@@ -108,6 +106,9 @@ tree.to_vtk("refined_quadtree.vtk")
 
 mesh.update()
 cut_mesh.update()
+cut_mesh.update_derivatives()
+
+exit(0)
 
 interior_mesh = cut_mesh.create_interior_mesh()
 

@@ -164,6 +164,35 @@ class ElasticityMass2D {
   double rho;
 };
 
+class Area2D {
+ public:
+  static constexpr int spatial_dim = 2;
+  static constexpr int dof_per_node = 0;
+
+  template <typename T>
+  using location_t = A2D::Vec<T, spatial_dim>;
+
+  template <typename T>
+  using normal_t = A2D::Vec<T, spatial_dim>;
+
+  template <typename T>
+  using input_t = A2D::Vec<T, dof_per_node>;
+
+  template <typename T>
+  using gradient_t = A2D::Mat<T, dof_per_node, spatial_dim>;
+
+  template <typename T>
+  T integrand(T& weight, location_t<T>& xloc, normal_t<T>& normal,
+              input_t<T>& val, gradient_t<T>& grad) const {
+    return weight;
+  }
+
+  template <typename T>
+  void residual(T weight, location_t<T>& xloc, normal_t<T>& normal,
+                input_t<T>& val_input, gradient_t<T>& grad_input,
+                input_t<T>& val_res, gradient_t<T>& grad_res) const {}
+};
+
 }  // namespace xcgd
 
 #endif  // XCGD_PHYSICS_H

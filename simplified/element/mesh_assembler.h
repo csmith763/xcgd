@@ -20,6 +20,12 @@ class MeshAssemblerBase {
   virtual void add_jacobian(const std::vector<T>& dof,
                             CSRMat<T>& csr) const = 0;
 
+  virtual void add_functional_derivative(const std::vector<T>& dof,
+                                         std::vector<T>& dfdx) const = 0;
+  virtual void add_adjoint_residual_product(const std::vector<T>& dof,
+                                            const std::vector<T>& adjoint,
+                                            std::vector<T>& dfdx) const = 0;
+
   virtual void add_row_counts(CSRPatternBuilder& pattern_builder) const = 0;
   virtual void insert_columns(CSRPatternBuilder& pattern_builder) const = 0;
 };
@@ -336,6 +342,7 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     // Query the max nodes and max quadrature points
     int max_nodes = mesh->get_max_element_nodes();
     int max_quad_pts = mesh->get_max_num_quadrature_points();
+    int max_dvs = mesh->get_max_element_design_vars();
 
     // Arrays for the node numbers
     std::vector<int> nodes(max_nodes);
@@ -346,6 +353,17 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     std::vector<T> weights(max_quad_pts);
     std::vector<T> points(spatial_dim * max_quad_pts);
     std::vector<T> normals(spatial_dim * max_quad_pts);
+
+    // Arrays to store the derivative values
+    std::vector<T> bweights(max_quad_pts);
+    std::vector<T> bpoints(spatial_dim * max_quad_pts);
+    std::vector<T> bnormals(spatial_dim * max_quad_pts);
+
+    // Arrays to store the derivatives of the quadratures
+    std::vector<T> dwdx(max_quad_pts * max_dvs);
+    std::vector<T> dpdx(max_quad_pts * spatial_dim * max_dvs);
+    std::vector<T> dndx(max_quad_pts * spatial_dim * max_dvs);
+    std::vector<int> dvs(max_dvs);
 
     // Arrays for storing the basis functions and derivatives
     std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
@@ -369,10 +387,14 @@ class MeshAssembler : public MeshAssemblerBase<T> {
 
       // Perform the quadrature
       for (int i = 0; i < num_quad_points; i++) {
-        typename Physics::template location_t<T> xloc;
-        typename Physics::template normal_t<T> normal;
-        typename Physics::template input_t<T> vals;
-        typename Physics::template gradient_t<T> grad;
+        static constexpr int ncomp =
+            1 + 2 * spatial_dim + dof_per_node * (1 + spatial_dim);
+
+        using ad_t = A2D::ADScalar<T, ncomp>;
+        typename Physics::template location_t<ad_t> xloc;
+        typename Physics::template normal_t<ad_t> normal;
+        typename Physics::template input_t<ad_t> vals;
+        typename Physics::template gradient_t<ad_t> grad;
 
         const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
         const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
@@ -385,8 +407,65 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
         interp_gradient(dof_per_node, num_nodes, Nxptr, elem_dof, grad);
 
-        // total_value += physics.integrand(weights[i], xloc, normal, vals,
-        // grad);
+        // Find dfdw, dfdnormal, dfdvals and dfdgrad
+        ad_t weight = weights[i];
+
+        // Set the forward seed values
+        weight.deriv[0] = 1.0;
+
+        for (int j = 0; j < spatial_dim; j++) {
+          xloc[j].deriv[1 + j] = 1.0;
+          normal[j].deriv[1 + spatial_dim + j] = 1.0;
+        }
+
+        for (int j = 0; j < dof_per_node; j++) {
+          constexpr int offset = 1 + 2 * spatial_dim;
+          vals[j].deriv[offset + j] = 1.0;
+        }
+
+        for (int j = 0; j < spatial_dim * dof_per_node; j++) {
+          constexpr int offset = 1 + 2 * spatial_dim + dof_per_node;
+          grad[j].deriv[offset + j] = 1.0;
+        }
+
+        // Compute the derivative
+        ad_t value = physics.integrand(weight, xloc, normal, vals, grad);
+
+        // Seed the derivatives for the reverse part of the computation
+        bweights[i] = value.deriv[0];
+
+        // // Seed the normal
+        // beweight typename Physics::template location_t<ad_t> xloc;
+        // typename Physics::template normal_t<ad_t> normal;
+        // typename Physics::template input_t<ad_t> vals;
+        // typename Physics::template gradient_t<ad_t> grad;
+      }
+
+      // Add the derivative contributions
+      int ndvs;
+      dndx.clear();
+      mesh->get_quadrature_derivative(elem, dwdx, dpdx, dndx, ndvs, dvs);
+
+      // Take the product to complete the derivatives
+      for (int i = 0; i < ndvs; i++) {
+        for (int j = 0; j < num_quad_points; j++) {
+          dfdx[dvs[i]] += bweights[j] * dwdx[j + i * num_quad_points];
+        }
+      }
+
+      const int m = num_quad_points * spatial_dim;
+      for (int i = 0; i < ndvs; i++) {
+        for (int j = 0; j < m; j++) {
+          dfdx[dvs[i]] += bpoints[j] * dpdx[j + i * m];
+        }
+      }
+
+      if (dndx.size() > 0) {
+        for (int i = 0; i < ndvs; i++) {
+          for (int j = 0; j < m; j++) {
+            dfdx[dvs[i]] += bnormals[j] * dndx[j + i * m];
+          }
+        }
       }
     }
   }

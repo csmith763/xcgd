@@ -47,7 +47,7 @@ class Assembler {
 
   std::vector<T>& get_dof() { return dof; }
   std::vector<T>& get_residual() { return res; }
-  std::vector<T>& get_adjoint() { return dfdx; }
+  std::vector<T>& get_adjoint() { return adjoint; }
   std::vector<T>& get_dfdx() { return dfdx; }
   CSRMat<T>& get_jacobian() { return csr; }
 

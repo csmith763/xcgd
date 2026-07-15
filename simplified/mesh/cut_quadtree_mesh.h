@@ -249,10 +249,10 @@ class QuadtreeCutMesh
   }
 
   // The nodes are the design variables
-  int get_max_design_index() const { return mesh->get_max_node_index(); }
+  int get_max_design_index() const { return lsf_mesh->get_max_node_index(); }
 
   int get_max_element_design_vars() const {
-    return mesh->get_max_element_nodes();
+    return lsf_mesh->get_max_element_nodes();
   }
 
   int get_quadrature_derivative(CutDomain domain, int elem,
@@ -270,8 +270,9 @@ class QuadtreeCutMesh
                     interior_points_jacobian[k].end());
 
         // Set the desgin variable indices (nodes from the underlying mesh)
-        int index = interface_elems[k];
-        ndvs = mesh->get_nodes(index, dvs);
+        int mesh_elem = interface_elems[k];
+        int lsf_elem = elem_to_lsf[mesh_elem];
+        ndvs = lsf_mesh->get_nodes(lsf_elem, dvs);
 
         return static_cast<int>(interior_weights[k].size());
       }
@@ -285,8 +286,9 @@ class QuadtreeCutMesh
                     exterior_points_jacobian[k].end());
 
         // Set the desgin variable indices (nodes from the underlying mesh)
-        int index = interface_elems[k];
-        ndvs = mesh->get_nodes(index, dvs);
+        int mesh_elem = interface_elems[k];
+        int lsf_elem = elem_to_lsf[mesh_elem];
+        ndvs = lsf_mesh->get_nodes(lsf_elem, dvs);
 
         return static_cast<int>(exterior_weights[k].size());
       }
@@ -299,7 +301,10 @@ class QuadtreeCutMesh
                   interface_normals_jacobian[elem].end());
 
       // Set the desgin variable indices (nodes from the underlying mesh)
-      ndvs = mesh->get_nodes(elem, dvs);
+      int mesh_elem = interface_elems[elem];
+      int lsf_elem = elem_to_lsf[mesh_elem];
+
+      ndvs = lsf_mesh->get_nodes(lsf_elem, dvs);
 
       return static_cast<int>(interface_weights.size());
     }

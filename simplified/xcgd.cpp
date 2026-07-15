@@ -168,7 +168,12 @@ PYBIND11_MODULE(xcgd, m) {
           py::return_value_policy::reference_internal)
       .def("eval_functional", &xcgd::Assembler<T>::eval_functional)
       .def("eval_residual", &xcgd::Assembler<T>::eval_residual)
-      .def("eval_jacobian", &xcgd::Assembler<T>::eval_jacobian);
+      .def("eval_jacobian", &xcgd::Assembler<T>::eval_jacobian)
+      .def("zero_derivative", &xcgd::Assembler<T>::zero_derivative)
+      .def("add_functional_derivative",
+           &xcgd::Assembler<T>::add_functional_derivative)
+      .def("add_adjoint_residual_product",
+           &xcgd::Assembler<T>::add_adjoint_residual_product);
 
   py::class_<xcgd::Quadtree, std::shared_ptr<xcgd::Quadtree>>(m, "Quadtree")
       .def(py::init<>())
