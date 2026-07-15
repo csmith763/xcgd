@@ -139,6 +139,15 @@ class QuadtreeMesh : public MeshBase<T> {
     return -1;
   }
 
+  // Get the length argument
+  T get_length() const { return length; }
+
+  // Get the node array
+  std::shared_ptr<QuadrantArray> get_quadrants() {
+    return tree->get_quadrants();
+  }
+  std::shared_ptr<NodeArray> get_node_array() { return nodes; }
+
   // Find the 4 nodes of the central cell of this element
   void get_cell_nodes(int elem, std::vector<int>& cell_nodes) {
     QuadrantArray& quads = *tree->get_quadrants();

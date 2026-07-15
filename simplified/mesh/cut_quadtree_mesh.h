@@ -18,14 +18,7 @@ class QuadtreeCutMesh
 
   QuadtreeCutMesh(std::shared_ptr<QuadtreeMesh<T>> mesh,
                   std::shared_ptr<QuadtreeMesh<T>> lsf_mesh)
-      : mesh(mesh),
-        lsf_mesh(lsf_mesh),
-        lsf(lsf_mesh->get_max_node_index()),
-        elem_location(mesh->get_num_elements(), ElementLocation::INTERIOR),
-        num_interior_nodes(0),
-        interior_node_map(mesh->get_max_node_index(), -1),
-        num_exterior_nodes(0),
-        exterior_node_map(mesh->get_max_node_index(), -1) {
+      : mesh(mesh), lsf_mesh(lsf_mesh), lsf(lsf_mesh->get_max_node_index()) {
     num_interior = 0;
     num_exterior = 0;
     num_interface = 0;
@@ -199,27 +192,27 @@ class QuadtreeCutMesh
 
       if (domain == CutDomain::INTERIOR_VOLUME) {
         if (elem < num_interior) {
-          mesh->get_element_base_point(interior_elems[elem], x0, y0, delta);
+          mesh->get_base_data(interior_elems[elem], x0, y0, delta);
 
           exclude = interior.exclude[elem];
           npts = interior.stencil[elem].size();
           X = interior.X[elem].data();
         } else {
           int k = elem - num_interior;
-          mesh->get_element_base_point(interface_elems[k], x0, y0, delta);
+          mesh->get_base_data(interface_elems[k], x0, y0, delta);
           exclude = interface_interior.exclude[k];
           npts = interface_interior.stencil[k].size();
           X = interface_interior.X[k].data();
         }
       } else if (domain == CutDomain::EXTERIOR_VOLUME) {
         if (elem < num_exterior) {
-          mesh->get_element_base_point(exterior_elems[elem], x0, y0, delta);
+          mesh->get_base_data(exterior_elems[elem], x0, y0, delta);
           exclude = exterior.exclude[elem];
           npts = exterior.stencil[elem].size();
           X = exterior.X[elem].data();
         } else {
           int k = elem - num_exterior;
-          mesh->get_element_base_point(interface_elems[k], x0, y0, delta);
+          mesh->get_base_data(interface_elems[k], x0, y0, delta);
           exclude = interface_exterior.exclude[k];
           npts = interface_exterior.stencil[k].size();
           X = interface_exterior.X[k].data();
@@ -241,7 +234,7 @@ class QuadtreeCutMesh
       }
     } else {
       T x0, y0, delta;
-      mesh->get_element_base_point(interface_elems[elem], x0, y0, delta);
+      mesh->get_base_data(interface_elems[elem], x0, y0, delta);
 
       uint32_t exclude_int = interface_interior.exclude[elem];
       std::size_t npts_int = interface_interior.stencil[elem].size();
@@ -321,6 +314,11 @@ class QuadtreeCutMesh
     // First update the tags for whether the cell is interior, exterior or
     // an interface element
     int num_elements = mesh->get_num_elements();
+    int num_nodes = mesh->get_max_node_index();
+
+    elem_location.resize(num_elements, ElementLocation::INTERIOR);
+    interior_node_map.resize(num_nodes, -1);
+    exterior_node_map.resize(num_nodes, -1);
 
     // Find the lsf element that lies within the given level set
     elem_to_lsf.resize(num_elements);
@@ -462,11 +460,11 @@ class QuadtreeCutMesh
       }
     }
 
-    // // Update the stencils for each element
-    // update_stencil(interior, interior_node_map, interior_elems);
-    // update_stencil(exterior, exterior_node_map, exterior_elems);
-    // update_stencil(interface_interior, interior_node_map, interface_elems);
-    // update_stencil(interface_exterior, exterior_node_map, interface_elems);
+    // Update the stencils for each element class
+    update_stencil(interior, interior_node_map, interior_elems);
+    update_stencil(exterior, exterior_node_map, exterior_elems);
+    update_stencil(interface_interior, interior_node_map, interface_elems);
+    update_stencil(interface_exterior, exterior_node_map, interface_elems);
   }
 
   void update_derivatives() {
@@ -589,266 +587,332 @@ class QuadtreeCutMesh
     std::vector<std::vector<T>> X;
   };
 
-  // void build_hanging_edge_stencil(StencilInfo& info,
-  //                                 const std::vector<int>& node_map,
-  //                                 const std::vector<int>& elem_map) {
-  //   QuadrantArray& quads = *tree->get_quadrants();
+  int get_mapped_node_index(const QuadrantNode& node,
+                            const std::vector<int>& node_map) {
+    NodeArray& nodes = *mesh->get_node_array();
 
-  //   const int edge_index_to_adjacent[] = {1, 0, 3, 2};
+    int base_index = nodes.get_index(node);
+    if (base_index >= static_cast<int>(node_map.size())) {
+      throw std::runtime_error("Base index out of range");
+    }
+    if (base_index >= 0) {
+      return node_map[base_index];
+    }
+    return -1;
+  }
 
-  //   for (int i = 0; i < quads.size(); i++) {
-  //     // Check if the info flag is set
-  //     if (quads[i].info) {
-  //       // Check if we have a dependent edge from a coarse element
-  //       for (int edge_index = 0; edge_index < 4; edge_index++) {
-  //         if (quads[i].info & (1 << (4 + edge_index))) {
-  //           edge_stencil[i][edge_index].reserve(5);
+  void build_hanging_edge_stencil(StencilInfo& info,
+                                  const std::vector<int>& node_map,
+                                  const std::vector<int>& elem_map) {
+    QuadrantArray& quads = *mesh->get_quadrants();
 
-  //           // Find the hanging node index
-  //           std::int32_t h = quads[i].get_size();
-  //           std::int32_t hd = h / 2;
+    const int edge_index_to_adjacent[] = {1, 0, 3, 2};
 
-  //           QuadrantNode node;
-  //           if (edge_index < 2) {
-  //             node.x = quads[i].x + h * (edge_index % 2);
-  //             node.y = quads[i].y + hd;
-  //           } else {
-  //             node.x = quads[i].x + hd;
-  //             node.y = quads[i].y + h * (edge_index % 2);
-  //           }
+    std::vector<int> inv_elem_map(quads.size(), -1);
+    for (int index = 0; index < elem_map.size(); index++) {
+      inv_elem_map[elem_map[index]] = index;
+    }
 
-  //           // Get the node index
-  //           int index = nodes->get_index(node);
+    for (int index = 0; index < elem_map.size(); index++) {
+      int elem = elem_map[index];
 
-  //           // This is a hanging node edge
-  //           if (index >= 0) {
-  //             edge_stencil[i][edge_index].push_back(index);
-  //           }
+      // Check if the info flag is set
+      if (quads[elem].info) {
+        // Check if we have a dependent edge from a coarse element
+        for (int edge_index = 0; edge_index < 4; edge_index++) {
+          if (quads[elem].info & (1 << (4 + edge_index))) {
+            std::vector<int>& edge = info.edge_stencil[index][edge_index];
+            const Quadrant& quad = quads[elem];
 
-  //           // Build the remaining stencil along the edge
-  //           add_edge_stencil(quads[i], edge_index,
-  //           edge_stencil[i][edge_index]);
-  //         }
-  //       }
-  //     }
-  //   }
+            // Normally, this will be of length 5
+            edge.clear();
+            edge.reserve(5);
 
-  //   // The remaining dependent edges can be copied from the others
-  //   for (int i = 0; i < quads.size(); i++) {
-  //     if (quads[i].info) {
-  //       for (int edge_index = 0; edge_index < 4; edge_index++) {
-  //         if (quads[i].info & (1 << edge_index)) {
-  //           Quadrant p = quads[i].parent();
-  //           p = p.edge_neighbor(edge_index);
+            // Find the hanging node index
+            std::int32_t h = quad.get_size();
+            std::int32_t hd = h / 2;
 
-  //           int element = quads.get_index(p);
-  //           int adj_edge = edge_index_to_adjacent[edge_index];
+            QuadrantNode node;
+            if (edge_index < 2) {
+              node.x = quad.x + h * (edge_index % 2);
+              node.y = quad.y + hd;
+            } else {
+              node.x = quad.x + hd;
+              node.y = quad.y + h * (edge_index % 2);
+            }
 
-  //           // Copy the contents to the other edge
-  //           edge_stencil[i][edge_index] = edge_stencil[element][adj_edge];
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
+            // Get the node index
+            int node_index = get_mapped_node_index(node, node_map);
 
-  // void build_regular_edge_stencil(StencilInfo& info,
-  //                                 const std::vector<int>& node_map,
-  //                                 const std::vector<int>& elem_map) {
-  //   QuadrantArray& quads = *tree->get_quadrants();
+            // This is a hanging node edge
+            if (node_index >= 0) {
+              edge.push_back(node_index);
+            }
 
-  //   for (int i = 0; i < quads.size(); i++) {
-  //     // Check that no info is set for this edge
-  //     for (int edge_index = 0; edge_index < 4; edge_index++) {
-  //       if ((quads[i].info & (1 << edge_index)) == 0 &&
-  //           (quads[i].info & (1 << (4 + edge_index))) == 0) {
-  //         edge_stencil[i][edge_index].reserve(4);
-  //         add_edge_stencil(quads[i], edge_index,
-  //         edge_stencil[i][edge_index]);
-  //       }
-  //     }
-  //   }
-  // }
+            // Build the remaining stencil along the edge
+            add_edge_stencil(quad, edge_index, node_map, edge);
+          }
+        }
+      }
+    }
 
-  // void find_node(const std::vector<int>& node_map, const QuadrantNode& node,
-  //                const QuadrantNode& dir, int& idx, int& step) {
-  //   idx = -1;
-  //   step = 0;
+    // The remaining dependent edges can be copied from the others
+    for (int index = 0; index < elem_map.size(); index++) {
+      int elem = elem_map[index];
 
-  //   for (int k = 0; k < 3; k++) {
-  //     QuadrantNode n;
-  //     n.x = node.x + (1 << k) * dir.x;
-  //     n.y = node.y + (1 << k) * dir.y;
+      if (quads[elem].info) {
+        for (int edge_index = 0; edge_index < 4; edge_index++) {
+          if (quads[elem].info & (1 << edge_index)) {
+            Quadrant p = quads[elem].parent();
+            p = p.edge_neighbor(edge_index);
 
-  //     int index = nodes->get_index(n);
+            int element = quads.get_index(p);
+            int adj_edge = edge_index_to_adjacent[edge_index];
+            int mapped_element = inv_elem_map[element];
 
-  //     // Success
-  //     if (index >= 0) {
-  //       idx = index;
-  //       step = 1 << k;
-  //       break;
-  //     }
-  //   }
-  // }
+            // Copy the contents to the other edge
+            if (mapped_element >= 0) {
+              info.edge_stencil[index][edge_index] =
+                  info.edge_stencil[mapped_element][adj_edge];
+            }
+          }
+        }
+      }
+    }
+  }
 
-  // void add_edge_stencil(const Quadrant& quad, int edge_index,
-  //                       std::vector<int>& edge) {
-  //   // Half the side length to look for
-  //   std::int64_t h = std::int64_t(1) << (Quadrant::MAX_LEVEL - quad.level);
-  //   std::int64_t hd = h / 2;
+  void build_regular_edge_stencil(StencilInfo& info,
+                                  const std::vector<int>& node_map,
+                                  const std::vector<int>& elem_map) {
+    QuadrantArray& quads = *mesh->get_quadrants();
 
-  //   // The corner nodes and directions
-  //   QuadrantNode n0, n1;
-  //   QuadrantNode d0, d1;
+    for (int index = 0; index < elem_map.size(); index++) {
+      int elem = elem_map[index];
+      const Quadrant& quad = quads[elem];
 
-  //   // Set the first corner node
-  //   if (edge_index < 2) {
-  //     n0.x = quad.x + h * (edge_index % 2);
-  //     n0.y = quad.y;
-  //     d0.x = 0;
-  //     d0.y = -hd;
+      // Check that no info is set for this edge
+      for (int edge_index = 0; edge_index < 4; edge_index++) {
+        std::vector<int>& edge = info.edge_stencil[index][edge_index];
 
-  //     n1.x = quad.x + h * (edge_index % 2);
-  //     n1.y = quad.y + h;
-  //     d1.x = 0;
-  //     d1.y = hd;
-  //   } else {
-  //     n0.x = quad.x;
-  //     n0.y = quad.y + h * (edge_index % 2);
-  //     d0.x = -hd;
-  //     d0.y = 0;
+        // If the size of the edge is zero, then nothing has been set
+        // if ((quads[i].info & (1 << edge_index)) == 0 &&
+        //     (quads[i].info & (1 << (4 + edge_index))) == 0) {
+        if (edge.size() == 0) {
+          edge.reserve(4);
+          add_edge_stencil(quad, edge_index, node_map, edge);
+        }
+      }
+    }
+  }
 
-  //     n1.x = quad.x + h;
-  //     n1.y = quad.y + h * (edge_index % 2);
-  //     d1.x = hd;
-  //     d1.y = 0;
-  //   }
+  void find_node(const QuadrantNode& node, const QuadrantNode& dir,
+                 const std::vector<int>& node_map, int& idx, int& step) {
+    idx = -1;
+    step = 0;
 
-  //   // Add the indices from the corner nodes
-  //   int idx0 = nodes->get_index(n0);
-  //   if (idx0 >= 0) {
-  //     edge.push_back(idx0);
-  //   }
+    for (int k = 0; k < 3; k++) {
+      QuadrantNode n;
+      n.x = node.x + (1 << k) * dir.x;
+      n.y = node.y + (1 << k) * dir.y;
 
-  //   int idx1 = nodes->get_index(n1);
-  //   if (idx1 >= 0) {
-  //     edge.push_back(idx1);
-  //   }
+      int index = get_mapped_node_index(n, node_map);
 
-  //   int s0;
-  //   find_node(n0, d0, idx0, s0);
-  //   if (idx0 >= 0) {
-  //     edge.push_back(idx0);
-  //   }
+      // Success
+      if (index >= 0) {
+        idx = index;
+        step = 1 << k;
+        break;
+      }
+    }
+  }
 
-  //   int s1;
-  //   find_node(n1, d1, idx1, s1);
-  //   if (idx1 >= 0) {
-  //     edge.push_back(idx1);
-  //   }
+  void add_edge_stencil(const Quadrant& quad, int edge_index,
+                        const std::vector<int>& node_map,
+                        std::vector<int>& edge) {
+    // Half the side length to look for
+    std::int64_t h = std::int64_t(1) << (Quadrant::MAX_LEVEL - quad.level);
+    std::int64_t hd = h / 2;
 
-  //   // Both steps were successful, no further action required
-  //   if (idx0 >= 0 && idx1 >= 0) {
-  //     return;
-  //   }
+    // The corner nodes and directions
+    QuadrantNode n0, n1;
+    QuadrantNode d0, d1;
 
-  //   // One step was successful and the other one wasn't. Pick an additional
-  //   // step along the successful direction
-  //   if ((idx0 >= 0) || (idx1 >= 0)) {
-  //     QuadrantNode n, d;
-  //     int idx, s;
+    // Set the first corner node
+    if (edge_index < 2) {
+      n0.x = quad.x + h * (edge_index % 2);
+      n0.y = quad.y;
+      d0.x = 0;
+      d0.y = -hd;
 
-  //     if (idx0 >= 0) {
-  //       n = n0;
-  //       d = d0;
-  //       s = s0;
-  //     } else {
-  //       n = n1;
-  //       d = d1;
-  //       s = s1;
-  //     }
+      n1.x = quad.x + h * (edge_index % 2);
+      n1.y = quad.y + h;
+      d1.x = 0;
+      d1.y = hd;
+    } else {
+      n0.x = quad.x;
+      n0.y = quad.y + h * (edge_index % 2);
+      d0.x = -hd;
+      d0.y = 0;
 
-  //     n.x += s * d.x;
-  //     n.y += s * d.y;
+      n1.x = quad.x + h;
+      n1.y = quad.y + h * (edge_index % 2);
+      d1.x = hd;
+      d1.y = 0;
+    }
 
-  //     find_node(n, d, idx, s);
-  //     if (idx >= 0) {
-  //       edge.push_back(idx);
-  //     }
-  //   }
-  // }
+    // Add the indices from the corner nodes
+    int idx0 = get_mapped_node_index(n0, node_map);
+    if (idx0 >= 0) {
+      edge.push_back(idx0);
+    }
 
-  // void build_element_stencil() {
-  //   for (std::size_t elem = 0; elem < edge_stencil.size(); ++elem) {
-  //     auto& elem_stencil = stencil[elem];
-  //     elem_stencil.clear();
+    int idx1 = get_mapped_node_index(n1, node_map);
+    if (idx1 >= 0) {
+      edge.push_back(idx1);
+    }
 
-  //     // Reserve enough space to avoid repeated allocations
-  //     std::size_t total_size = 0;
-  //     for (const auto& edge : edge_stencil[elem]) {
-  //       total_size += edge.size();
-  //     }
-  //     elem_stencil.reserve(total_size);
+    int s0;
+    find_node(n0, d0, node_map, idx0, s0);
+    if (idx0 >= 0) {
+      edge.push_back(idx0);
+    }
 
-  //     // Merge all four edge stencils
-  //     for (const auto& edge : edge_stencil[elem]) {
-  //       for (int node : edge) {
-  //         if (node >= 0) {
-  //           elem_stencil.push_back(node);
-  //         }
-  //       }
-  //     }
+    int s1;
+    find_node(n1, d1, node_map, idx1, s1);
+    if (idx1 >= 0) {
+      edge.push_back(idx1);
+    }
 
-  //     // Sort and remove duplicate nodes shared by adjacent edges
-  //     std::sort(elem_stencil.begin(), elem_stencil.end());
-  //     elem_stencil.erase(std::unique(elem_stencil.begin(),
-  //     elem_stencil.end()),
-  //                        elem_stencil.end());
-  //   }
-  // }
+    // Both steps were successful, no further action required
+    if (idx0 >= 0 && idx1 >= 0) {
+      return;
+    }
 
-  // void update_stencil(StencilInfo& info, const std::vector<int>& node_map,
-  //                     const std::vector<int>& elem_map) {
-  //   info.exclude.resize(elem_map.size());
-  //   info.edge_stencil.resize(elem_map.size());
-  //   info.stencil.resize(elem_map.size());
-  //   info.X.resize(elem_map.size());
+    // One step was successful and the other one wasn't. Pick an additional
+    // step along the successful direction
+    if ((idx0 >= 0) || (idx1 >= 0)) {
+      QuadrantNode n, d;
+      int idx, s;
 
-  //   build_hanging_edge_stencil(info, node_map, elem_map);
-  //   build_regular_edge_stencil(info, node_map, elem_map);
+      if (idx0 >= 0) {
+        n = n0;
+        d = d0;
+        s = s0;
+      } else {
+        n = n1;
+        d = d1;
+        s = s1;
+      }
 
-  //   // Based on the edge stencils, build the full stencil for an element
-  //   build_element_stencil(info, node_map, elem_map);
+      n.x += s * d.x;
+      n.y += s * d.y;
 
-  //   // Set the node locations for each element
-  //   NodeArray& node_array = *nodes;
-  //   int num_elements = elem_map.size();
-  //   info.X.resize(num_elements);
+      find_node(n, d, node_map, idx, s);
+      if (idx >= 0) {
+        edge.push_back(idx);
+      }
+    }
+  }
 
-  //   for (int elem = 0; elem < num_elements; elem++) {
-  //     info.X[elem].resize(2 * stencil[elem].size());
+  void build_element_stencil(StencilInfo& info) {
+    const auto& edge_stencil = info.edge_stencil;
+    auto& stencil = info.stencil;
 
-  //     for (int k = 0; k < stencil[elem].size(); k++) {
-  //       int index = stencil[elem][k];
-  //       info.X[elem][2 * k] = length * node_array[index].x / hmax;
-  //       info.X[elem][2 * k + 1] = length * node_array[index].y / hmax;
-  //     }
-  //   }
+    for (std::size_t elem = 0; elem < edge_stencil.size(); ++elem) {
+      std::vector<int>& elem_stencil = stencil[elem];
+      elem_stencil.clear();
 
-  //   // Now compute the exclusion for each basis
-  //   exclude.resize(num_elements);
-  //   for (int elem = 0; elem < num_elements; elem++) {
-  //     T delta = length * quads[elem].get_size() / hmax;
-  //     T x0 = length * quads[elem].x / hmax;
-  //     T y0 = length * quads[elem].y / hmax;
-  //     const T* Xelem = X[elem].data();
+      // Reserve enough space to avoid repeated allocations
+      std::size_t total_size = 0;
+      for (const auto& edge : edge_stencil[elem]) {
+        total_size += edge.size();
+      }
+      elem_stencil.reserve(total_size);
 
-  //     int num_points = static_cast<int>(stencil[elem].size());
+      // Merge all four edge stencils
+      for (const auto& edge : edge_stencil[elem]) {
+        for (int node : edge) {
+          if (node >= 0) {
+            elem_stencil.push_back(node);
+          }
+        }
+      }
 
-  //     info.exclude[elem] =
-  //         compute_exclude_bits_from_points(num_points, x0, y0, delta, Xelem);
-  //   }
-  // }
+      // Sort and remove duplicate nodes shared by adjacent edges
+      std::sort(elem_stencil.begin(), elem_stencil.end());
+      elem_stencil.erase(std::unique(elem_stencil.begin(), elem_stencil.end()),
+                         elem_stencil.end());
+    }
+  }
+
+  void update_stencil(StencilInfo& info, const std::vector<int>& node_map,
+                      const std::vector<int>& elem_map) {
+    info.exclude.resize(elem_map.size());
+    info.edge_stencil.resize(elem_map.size());
+    info.stencil.resize(elem_map.size());
+    info.X.resize(elem_map.size());
+
+    for (int i = 0; i < info.edge_stencil.size(); i++) {
+      for (int j = 0; j < 4; j++) {
+        info.edge_stencil[i][j].clear();
+      }
+    }
+
+    build_hanging_edge_stencil(info, node_map, elem_map);
+    build_regular_edge_stencil(info, node_map, elem_map);
+
+    // Based on the edge stencils, build the full stencil for an element
+    build_element_stencil(info);
+
+    // Set the node locations for each element
+    const T length = mesh->get_length();
+    NodeArray& node_array = *mesh->get_node_array();
+    int num_elements = elem_map.size();
+    info.X.resize(num_elements);
+
+    // Set up an inverse node mapping
+    std::vector<int> inv_node_map(node_array.size(), -1);
+    for (int i = 0; i < node_map.size(); i++) {
+      if (node_map[i] >= 0) {
+        inv_node_map[node_map[i]] = i;
+      }
+    }
+
+    constexpr std::int64_t hmax = std::int64_t(1) << Quadrant::MAX_LEVEL;
+
+    for (int index = 0; index < num_elements; index++) {
+      info.X[index].resize(2 * info.stencil[index].size());
+
+      for (int k = 0; k < info.stencil[index].size(); k++) {
+        int node_index = info.stencil[index][k];
+        int base_node = inv_node_map[node_index];
+        if (base_node < 0) {
+          throw std::runtime_error("Stencil failure: Use of un-mapped node");
+        }
+
+        info.X[index][2 * k] = length * node_array[base_node].x / hmax;
+        info.X[index][2 * k + 1] = length * node_array[base_node].y / hmax;
+      }
+    }
+
+    // Now compute the exclusion for each basis
+    QuadrantArray& quads = *mesh->get_quadrants();
+
+    info.exclude.resize(num_elements);
+    for (int index = 0; index < num_elements; index++) {
+      int elem = elem_map[index];
+
+      T delta = length * quads[elem].get_size() / hmax;
+      T x0 = length * quads[elem].x / hmax;
+      T y0 = length * quads[elem].y / hmax;
+      const T* Xelem = info.X[index].data();
+
+      int num_points = static_cast<int>(info.stencil[index].size());
+
+      info.exclude[index] =
+          compute_exclude_bits_from_points(num_points, x0, y0, delta, Xelem);
+    }
+  }
 
   // The underlying Cartesian mesh that defines the level set
   std::shared_ptr<QuadtreeMesh<T>> mesh;

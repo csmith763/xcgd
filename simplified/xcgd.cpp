@@ -226,5 +226,11 @@ PYBIND11_MODULE(xcgd, m) {
           },
           py::return_value_policy::reference_internal)
       .def("get_interface_elements",
-           &xcgd::QuadtreeCutMesh<T>::get_interface_elements);
+           &xcgd::QuadtreeCutMesh<T>::get_interface_elements)
+      .def("create_interior_mesh",
+           &xcgd::QuadtreeCutMesh<T>::create_interior_mesh)
+      .def("create_exterior_mesh",
+           &xcgd::QuadtreeCutMesh<T>::create_exterior_mesh)
+      .def("create_interface_mesh",
+           &xcgd::QuadtreeCutMesh<T>::create_interface_mesh);
 }
