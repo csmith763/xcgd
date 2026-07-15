@@ -2,7 +2,6 @@ import xcgd
 import numpy as np
 import amigo as am
 import matplotlib.pylab as plt
-from elasticity import apply_boundary_conditions
 from scipy.sparse import csr_matrix
 from eigd import IRAM, make_operator
 from icecream import ic
@@ -75,7 +74,7 @@ for i in range(3):
 
 # Write out the quadtree
 tree.to_vtk("test_tree_balanced.vtk")
-length = 1.0
+length = 3.0
 
 # Create the LSF mesh
 lsf_mesh = xcgd.QuadtreeMesh(source, length)
@@ -89,16 +88,19 @@ X = np.array(lsf_mesh.get_node_locations())
 cut_mesh = xcgd.QuadtreeCutMesh(mesh, lsf_mesh)
 lsf = cut_mesh.get_lsf()
 
-x0 = 0.5
-y0 = 0.5
-r0 = 1.0 / np.sqrt(5.0)
+x0 = 1.5
+y0 = 1.5
+r0 = 1.0
 lsf[:] = (X[::2] - x0) ** 2 + (X[1::2] - y0) ** 2 - r0**2
 
 cut_mesh.update()
 interface_elems = cut_mesh.get_interface_elements()
 
+interior_elems = cut_mesh.get_interior_elements()
+
 refinement = np.zeros(tree.size(), dtype=np.int32)
 refinement[interface_elems] = 2
+refinement[interior_elems] = 1
 tree.refine(refinement)
 tree.balance()
 

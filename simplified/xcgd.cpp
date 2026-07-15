@@ -227,6 +227,10 @@ PYBIND11_MODULE(xcgd, m) {
           py::return_value_policy::reference_internal)
       .def("get_interface_elements",
            &xcgd::QuadtreeCutMesh<T>::get_interface_elements)
+      .def("get_exterior_elements",
+           &xcgd::QuadtreeCutMesh<T>::get_exterior_elements)
+      .def("get_interior_elements",
+           &xcgd::QuadtreeCutMesh<T>::get_interior_elements)
       .def("create_interior_mesh",
            &xcgd::QuadtreeCutMesh<T>::create_interior_mesh)
       .def("create_exterior_mesh",
