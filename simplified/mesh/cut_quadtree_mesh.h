@@ -852,12 +852,13 @@ class QuadtreeCutMesh
 
   void update_stencil(StencilInfo& info, const std::vector<int>& node_map,
                       const std::vector<int>& elem_map) {
-    info.exclude.resize(elem_map.size());
-    info.edge_stencil.resize(elem_map.size());
-    info.stencil.resize(elem_map.size());
-    info.X.resize(elem_map.size());
+    int num_elements = elem_map.size();
+    info.exclude.resize(num_elements);
+    info.edge_stencil.resize(num_elements);
+    info.stencil.resize(num_elements);
+    info.X.resize(num_elements);
 
-    for (int i = 0; i < info.edge_stencil.size(); i++) {
+    for (int i = 0; i < num_elements; i++) {
       for (int j = 0; j < 4; j++) {
         info.edge_stencil[i][j].clear();
       }
@@ -872,11 +873,9 @@ class QuadtreeCutMesh
     // Set the node locations for each element
     const T length = mesh->get_length();
     NodeArray& node_array = *mesh->get_node_array();
-    int num_elements = elem_map.size();
-    info.X.resize(num_elements);
 
     // Set up an inverse node mapping
-    std::vector<int> inv_node_map(node_array.size(), -1);
+    std::vector<int> inv_node_map(num_interior_nodes + num_exterior_nodes, -1);
     for (int i = 0; i < node_map.size(); i++) {
       if (node_map[i] >= 0) {
         inv_node_map[node_map[i]] = i;

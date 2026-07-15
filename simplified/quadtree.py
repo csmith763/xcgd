@@ -3,8 +3,8 @@ import numpy as np
 import amigo as am
 import matplotlib.pylab as plt
 from scipy.sparse import csr_matrix
-from eigd import IRAM, make_operator
-from icecream import ic
+# from eigd import IRAM, make_operator
+# from icecream import ic
 
 # from flume_topology.analyses.topo_analysis import TopoAnalysis
 # from flume_topology.analyses.frequency_analysis import NaturalFrequencyAnalysis

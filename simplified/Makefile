@@ -14,10 +14,11 @@ CXXFLAGS_DEBUG := -g -std=c++17 -fPIC $(PYBIND11_CFLAGS)
 ifeq ($(shell uname),Darwin)
   LDFLAGS := -bundle -undefined dynamic_lookup -framework Accelerate
 else
-  LDFLAGS := -shared
+  LAPACKE_INCLUDE = -I/home/gkennedy9/miniconda3/include
+  LDFLAGS := -shared -llapacke -llapack -lblas
 endif
 
-INCLUDES := -I$(A2D_INCLUDE_DIR) -I$(ALGOIM_INCLUDE_DIR) -Ielement -Iphysics -Imesh
+INCLUDES := -I$(A2D_INCLUDE_DIR) -I$(ALGOIM_INCLUDE_DIR) -Ielement -Iphysics -Imesh $(LAPACKE_INCLUDE)
 
 TARGET := $(MODULE)$(PYTHON_EXT_SUFFIX)
 

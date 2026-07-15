@@ -1,24 +1,43 @@
 #ifndef XCGD_VANDERMONDE_H
 #define XCGD_VANDERMONDE_H
 
+#include <stdexcept>
+#include <string>
 #include <vector>
 
-// Fortran LAPACK interface
+#if defined(__APPLE__)
+
+// Use the Fortran LAPACK interface provided by Accelerate on macOS.
+using lapack_int_t = int;
+
 extern "C" {
-void dgetrf_(const int* m, const int* n, double* a, const int* lda, int* ipiv,
-             int* info);
 
-void dgetrs_(const char* trans, const int* n, const int* nrhs, const double* a,
-             const int* lda, const int* ipiv, double* b, const int* ldb,
-             int* info);
+void dgetrf_(const lapack_int_t* m, const lapack_int_t* n, double* a,
+             const lapack_int_t* lda, lapack_int_t* ipiv, lapack_int_t* info);
 
-void sgetrf_(const int* m, const int* n, float* a, const int* lda, int* ipiv,
-             int* info);
+void dgetrs_(const char* trans, const lapack_int_t* n, const lapack_int_t* nrhs,
+             const double* a, const lapack_int_t* lda, const lapack_int_t* ipiv,
+             double* b, const lapack_int_t* ldb, lapack_int_t* info);
 
-void sgetrs_(const char* trans, const int* n, const int* nrhs, const float* a,
-             const int* lda, const int* ipiv, float* b, const int* ldb,
-             int* info);
+void sgetrf_(const lapack_int_t* m, const lapack_int_t* n, float* a,
+             const lapack_int_t* lda, lapack_int_t* ipiv, lapack_int_t* info);
+
+void sgetrs_(const char* trans, const lapack_int_t* n, const lapack_int_t* nrhs,
+             const float* a, const lapack_int_t* lda, const lapack_int_t* ipiv,
+             float* b, const lapack_int_t* ldb, lapack_int_t* info);
 }
+
+#elif defined(__linux__)
+
+// Use the LAPACKE C interface on Linux.
+#include <lapacke.h>
+
+using lapack_int_t = lapack_int;
+
+#else
+#error \
+    "Unsupported platform: LAPACK interface is implemented only for macOS and Linux"
+#endif
 
 namespace xcgd {
 
@@ -29,52 +48,112 @@ struct Lapack;
 
 template <>
 struct Lapack<double> {
-  static void getrf(int n, double* A, int* ipiv) {
-    int info = 0;
-    dgetrf_(&n, &n, A, &n, ipiv, &info);
+  using int_type = lapack_int_t;
 
+  static void getrf(int_type n, double* A, int_type* ipiv) {
+#if defined(__APPLE__)
+    int_type info = 0;
+    dgetrf_(&n, &n, A, &n, ipiv, &info);
+#else
+    const int_type info = LAPACKE_dgetrf(LAPACK_COL_MAJOR, n, n, A, n, ipiv);
+#endif
+
+    check_getrf_info(info, "dgetrf");
+  }
+
+  static void getrs(char trans, int_type n, int_type nrhs, const double* LU,
+                    const int_type* ipiv, double* B) {
+#if defined(__APPLE__)
+    int_type info = 0;
+    dgetrs_(&trans, &n, &nrhs, LU, &n, ipiv, B, &n, &info);
+#else
+    const int_type info =
+        LAPACKE_dgetrs(LAPACK_COL_MAJOR, trans, n, nrhs, LU, n, ipiv, B, n);
+#endif
+
+    check_getrs_info(info, "dgetrs");
+  }
+
+ private:
+  static void check_getrf_info(int_type info, const char* name) {
     if (info < 0) {
-      throw std::runtime_error("dgetrf: illegal argument " +
+      throw std::runtime_error(std::string(name) + ": illegal argument " +
                                std::to_string(-info));
-    } else if (info > 0) {
-      throw std::runtime_error("dgetrf: singular matrix");
+    }
+
+    if (info > 0) {
+      throw std::runtime_error(
+          std::string(name) + ": singular matrix; zero pivot at U(" +
+          std::to_string(info) + ", " + std::to_string(info) + ")");
     }
   }
 
-  static void getrs(char trans, int n, int nrhs, const double* LU,
-                    const int* ipiv, double* B) {
-    int info = 0;
-    dgetrs_(&trans, &n, &nrhs, LU, &n, ipiv, B, &n, &info);
-
-    if (info != 0) {
-      throw std::runtime_error("dgetrs: illegal argument " +
+  static void check_getrs_info(int_type info, const char* name) {
+    if (info < 0) {
+      throw std::runtime_error(std::string(name) + ": illegal argument " +
                                std::to_string(-info));
+    }
+
+    if (info > 0) {
+      throw std::runtime_error(std::string(name) +
+                               ": unexpected positive info value " +
+                               std::to_string(info));
     }
   }
 };
 
 template <>
 struct Lapack<float> {
-  static void getrf(int n, float* A, int* ipiv) {
-    int info = 0;
-    sgetrf_(&n, &n, A, &n, ipiv, &info);
+  using int_type = lapack_int_t;
 
+  static void getrf(int_type n, float* A, int_type* ipiv) {
+#if defined(__APPLE__)
+    int_type info = 0;
+    sgetrf_(&n, &n, A, &n, ipiv, &info);
+#else
+    const int_type info = LAPACKE_sgetrf(LAPACK_COL_MAJOR, n, n, A, n, ipiv);
+#endif
+
+    check_getrf_info(info, "sgetrf");
+  }
+
+  static void getrs(char trans, int_type n, int_type nrhs, const float* LU,
+                    const int_type* ipiv, float* B) {
+#if defined(__APPLE__)
+    int_type info = 0;
+    sgetrs_(&trans, &n, &nrhs, LU, &n, ipiv, B, &n, &info);
+#else
+    const int_type info =
+        LAPACKE_sgetrs(LAPACK_COL_MAJOR, trans, n, nrhs, LU, n, ipiv, B, n);
+#endif
+
+    check_getrs_info(info, "sgetrs");
+  }
+
+ private:
+  static void check_getrf_info(int_type info, const char* name) {
     if (info < 0) {
-      throw std::runtime_error("sgetrf: illegal argument " +
+      throw std::runtime_error(std::string(name) + ": illegal argument " +
                                std::to_string(-info));
-    } else if (info > 0) {
-      throw std::runtime_error("sgetrf: singular matrix");
+    }
+
+    if (info > 0) {
+      throw std::runtime_error(
+          std::string(name) + ": singular matrix; zero pivot at U(" +
+          std::to_string(info) + ", " + std::to_string(info) + ")");
     }
   }
 
-  static void getrs(char trans, int n, int nrhs, const float* LU,
-                    const int* ipiv, float* B) {
-    int info = 0;
-    sgetrs_(&trans, &n, &nrhs, LU, &n, ipiv, B, &n, &info);
-
-    if (info != 0) {
-      throw std::runtime_error("sgetrs: illegal argument " +
+  static void check_getrs_info(int_type info, const char* name) {
+    if (info < 0) {
+      throw std::runtime_error(std::string(name) + ": illegal argument " +
                                std::to_string(-info));
+    }
+
+    if (info > 0) {
+      throw std::runtime_error(std::string(name) +
+                               ": unexpected positive info value " +
+                               std::to_string(info));
     }
   }
 };
@@ -199,7 +278,7 @@ class Vandermonde2D {
 
   // Storage for the factorization of V
   std::vector<T> V;
-  std::vector<int> ipiv;
+  std::vector<typename detail::Lapack<T>::int_type> ipiv;
 };
 
 }  // namespace xcgd
