@@ -369,101 +369,103 @@ class MeshAssembler : public MeshAssemblerBase<T> {
     std::vector<T> Nd((1 + spatial_dim) * max_nodes * max_quad_pts);
 
     for (int elem = 0; elem < mesh->get_num_elements(); elem++) {
-      // Get the node numbers and locations associated with the element
-      int num_nodes = mesh->get_nodes(elem, nodes);
-
-      // Get the quadrature weights and points associated with the element
-      int num_quad_points =
-          mesh->get_quadrature(elem, weights, points, normals);
-
-      // Evaluate the basis at all the quadrature points
-      mesh->eval_basis(elem, num_quad_points, points, Nd);
-
-      // Get the node locations
-      mesh->get_points(elem, X);
-
-      // Get the variables associated with the nodes
-      get_element_vars(num_nodes, nodes, dof, elem_dof);
-
-      // Perform the quadrature
-      for (int i = 0; i < num_quad_points; i++) {
-        static constexpr int ncomp =
-            1 + 2 * spatial_dim + dof_per_node * (1 + spatial_dim);
-
-        using ad_t = A2D::ADScalar<T, ncomp>;
-        typename Physics::template location_t<ad_t> xloc;
-        typename Physics::template normal_t<ad_t> normal;
-        typename Physics::template input_t<ad_t> vals;
-        typename Physics::template gradient_t<ad_t> grad;
-
-        const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
-        const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
-
-        for (int k = 0; k < spatial_dim; k++) {
-          normal[k] = normals[i * spatial_dim + k];
-        }
-
-        interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
-        interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
-        interp_gradient(dof_per_node, num_nodes, Nxptr, elem_dof, grad);
-
-        // Find dfdw, dfdnormal, dfdvals and dfdgrad
-        ad_t weight = weights[i];
-
-        // Set the forward seed values
-        weight.deriv[0] = 1.0;
-
-        for (int j = 0; j < spatial_dim; j++) {
-          xloc[j].deriv[1 + j] = 1.0;
-          normal[j].deriv[1 + spatial_dim + j] = 1.0;
-        }
-
-        for (int j = 0; j < dof_per_node; j++) {
-          constexpr int offset = 1 + 2 * spatial_dim;
-          vals[j].deriv[offset + j] = 1.0;
-        }
-
-        for (int j = 0; j < spatial_dim * dof_per_node; j++) {
-          constexpr int offset = 1 + 2 * spatial_dim + dof_per_node;
-          grad[j].deriv[offset + j] = 1.0;
-        }
-
-        // Compute the derivative
-        ad_t value = physics.integrand(weight, xloc, normal, vals, grad);
-
-        // Seed the derivatives for the reverse part of the computation
-        bweights[i] = value.deriv[0];
-
-        // // Seed the normal
-        // beweight typename Physics::template location_t<ad_t> xloc;
-        // typename Physics::template normal_t<ad_t> normal;
-        // typename Physics::template input_t<ad_t> vals;
-        // typename Physics::template gradient_t<ad_t> grad;
-      }
-
       // Add the derivative contributions
       int ndvs;
       dndx.clear();
       mesh->get_quadrature_derivative(elem, dwdx, dpdx, dndx, ndvs, dvs);
 
-      // Take the product to complete the derivatives
-      for (int i = 0; i < ndvs; i++) {
-        for (int j = 0; j < num_quad_points; j++) {
-          dfdx[dvs[i]] += bweights[j] * dwdx[j + i * num_quad_points];
-        }
-      }
+      if (ndvs > 0) {
+        // Get the node numbers and locations associated with the element
+        int num_nodes = mesh->get_nodes(elem, nodes);
 
-      const int m = num_quad_points * spatial_dim;
-      for (int i = 0; i < ndvs; i++) {
-        for (int j = 0; j < m; j++) {
-          dfdx[dvs[i]] += bpoints[j] * dpdx[j + i * m];
-        }
-      }
+        // Get the quadrature weights and points associated with the element
+        int num_quad_points =
+            mesh->get_quadrature(elem, weights, points, normals);
 
-      if (dndx.size() > 0) {
+        // Evaluate the basis at all the quadrature points
+        mesh->eval_basis(elem, num_quad_points, points, Nd);
+
+        // Get the node locations
+        mesh->get_points(elem, X);
+
+        // Get the variables associated with the nodes
+        get_element_vars(num_nodes, nodes, dof, elem_dof);
+
+        // Perform the quadrature
+        for (int i = 0; i < num_quad_points; i++) {
+          static constexpr int ncomp =
+              1 + 2 * spatial_dim + dof_per_node * (1 + spatial_dim);
+
+          using ad_t = A2D::ADScalar<T, ncomp>;
+          typename Physics::template location_t<ad_t> xloc;
+          typename Physics::template normal_t<ad_t> normal;
+          typename Physics::template input_t<ad_t> vals;
+          typename Physics::template gradient_t<ad_t> grad;
+
+          const T* Nptr = &Nd[(spatial_dim + 1) * num_nodes * i];
+          const T* Nxptr = &Nd[(spatial_dim + 1) * num_nodes * i + num_nodes];
+
+          for (int k = 0; k < spatial_dim; k++) {
+            normal[k] = normals[i * spatial_dim + k];
+          }
+
+          interp_values(spatial_dim, num_nodes, Nptr, X, xloc);
+          interp_values(dof_per_node, num_nodes, Nptr, elem_dof, vals);
+          interp_gradient(dof_per_node, num_nodes, Nxptr, elem_dof, grad);
+
+          // Find dfdw, dfdnormal, dfdvals and dfdgrad
+          ad_t weight = weights[i];
+
+          // Set the forward seed values
+          weight.deriv[0] = 1.0;
+
+          for (int j = 0; j < spatial_dim; j++) {
+            xloc[j].deriv[1 + j] = 1.0;
+            normal[j].deriv[1 + spatial_dim + j] = 1.0;
+          }
+
+          for (int j = 0; j < dof_per_node; j++) {
+            constexpr int offset = 1 + 2 * spatial_dim;
+            vals[j].deriv[offset + j] = 1.0;
+          }
+
+          for (int j = 0; j < spatial_dim * dof_per_node; j++) {
+            constexpr int offset = 1 + 2 * spatial_dim + dof_per_node;
+            grad[j].deriv[offset + j] = 1.0;
+          }
+
+          // Compute the derivative
+          ad_t value = physics.integrand(weight, xloc, normal, vals, grad);
+
+          // Seed the derivatives for the reverse part of the computation
+          bweights[i] = value.deriv[0];
+
+          // // Seed the normal
+          // beweight typename Physics::template location_t<ad_t> xloc;
+          // typename Physics::template normal_t<ad_t> normal;
+          // typename Physics::template input_t<ad_t> vals;
+          // typename Physics::template gradient_t<ad_t> grad;
+        }
+
+        // Take the product to complete the derivatives
+        for (int i = 0; i < ndvs; i++) {
+          for (int j = 0; j < num_quad_points; j++) {
+            dfdx[dvs[i]] += bweights[j] * dwdx[j + i * num_quad_points];
+          }
+        }
+
+        const int m = num_quad_points * spatial_dim;
         for (int i = 0; i < ndvs; i++) {
           for (int j = 0; j < m; j++) {
-            dfdx[dvs[i]] += bnormals[j] * dndx[j + i * m];
+            dfdx[dvs[i]] += bpoints[j] * dpdx[j + i * m];
+          }
+        }
+
+        if (dndx.size() > 0) {
+          for (int i = 0; i < ndvs; i++) {
+            for (int j = 0; j < m; j++) {
+              dfdx[dvs[i]] += bnormals[j] * dndx[j + i * m];
+            }
           }
         }
       }

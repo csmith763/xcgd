@@ -3,57 +3,58 @@ import numpy as np
 import amigo as am
 import matplotlib.pylab as plt
 from scipy.sparse import csr_matrix
-# from eigd import IRAM, make_operator
-# from icecream import ic
+from eigd import IRAM, make_operator
+from icecream import ic
 
 # from flume_topology.analyses.topo_analysis import TopoAnalysis
 # from flume_topology.analyses.frequency_analysis import NaturalFrequencyAnalysis
 # from flume_topology.utils.mesh_utils import create_beam_domain
 import niceplots
 
-# def solve_frequency_problem(
-#     stiffness_assembler,
-#     mass_assembler,
-#     sigma=0.0,
-#     N=10,
-#     tol=1e-14,
-#     eig_atol=1e-5,
-# ):
-#     """
-#     Solves the natural frequency problem using eigd with Galerkin-difference for the numerical solution.
-#     """
 
-#     # Update the sparsity patterns for the stiffness and mass matrices
-#     stiffness_assembler.update()
-#     mass_assembler.update()
+def solve_frequency_problem(
+    stiffness_assembler,
+    mass_assembler,
+    sigma=0.0,
+    N=10,
+    tol=1e-14,
+    eig_atol=1e-5,
+):
+    """
+    Solves the natural frequency problem using eigd with Galerkin-difference for the numerical solution.
+    """
 
-#     # # Evaluate the residual and the Jacobian
-#     stiffness_assembler.eval_jacobian()
-#     mass_assembler.eval_jacobian()
+    # Update the sparsity patterns for the stiffness and mass matrices
+    stiffness_assembler.update()
+    mass_assembler.update()
 
-#     # Retrieve the Jacobian we just computed
-#     kcsr = stiffness_assembler.get_jacobian()
-#     mcsr = mass_assembler.get_jacobian()
+    # # Evaluate the residual and the Jacobian
+    stiffness_assembler.eval_jacobian()
+    mass_assembler.eval_jacobian()
 
-#     # Construct SciPy CSR matrices
-#     K_sp = csr_matrix((kcsr.data, kcsr.cols, kcsr.rowp), shape=(kcsr.nrows, kcsr.nrows))
-#     M_sp = csr_matrix((mcsr.data, mcsr.cols, mcsr.rowp), shape=(mcsr.nrows, mcsr.nrows))
+    # Retrieve the Jacobian we just computed
+    kcsr = stiffness_assembler.get_jacobian()
+    mcsr = mass_assembler.get_jacobian()
 
-#     # Compute the shifted operator
-#     mat = K_sp - sigma * M_sp
-#     mat = (mat + mat.T) * 0.5
+    # Construct SciPy CSR matrices
+    K_sp = csr_matrix((kcsr.data, kcsr.cols, kcsr.rowp), shape=(kcsr.nrows, kcsr.nrows))
+    M_sp = csr_matrix((mcsr.data, mcsr.cols, mcsr.rowp), shape=(mcsr.nrows, mcsr.nrows))
 
-#     # Construct the operator
-#     factor = make_operator(mat)
+    # Compute the shifted operator
+    mat = K_sp - sigma * M_sp
+    mat = (mat + mat.T) * 0.5
 
-#     # Construct the eigensolver
-#     m = max(2 * N + 1, 60)
-#     eig_solver = IRAM(N=N, m=m, eig_atol=eig_atol, tol=tol)
+    # Construct the operator
+    factor = make_operator(mat)
 
-#     # Solve the eigenvalue problem
-#     lam, Q = eig_solver.solve(A=K_sp, B=M_sp, factor=factor, sigma=sigma)
+    # Construct the eigensolver
+    m = max(2 * N + 1, 60)
+    eig_solver = IRAM(N=N, m=m, eig_atol=eig_atol, tol=tol)
 
-#     return lam, Q
+    # Solve the eigenvalue problem
+    lam, Q = eig_solver.solve(A=K_sp, B=M_sp, factor=factor, sigma=sigma)
+
+    return lam, Q
 
 
 tree = xcgd.Quadtree()
@@ -108,10 +109,7 @@ mesh.update()
 cut_mesh.update()
 cut_mesh.update_derivatives()
 
-exit(0)
-
 interior_mesh = cut_mesh.create_interior_mesh()
-
 
 E, nu, rho = 1.0, 0.3, 1.0
 elas = xcgd.LinearElasticity2D(E, nu)
@@ -121,6 +119,15 @@ stiffness_assembler = xcgd.Assembler(
     [xcgd.LinearElasticity2DAssembler(interior_mesh, elas)]
 )
 mass_assembler = xcgd.Assembler([xcgd.ElasticityMass2DAssembler(interior_mesh, mass)])
+
+stiffness_assembler.zero_derivative()
+stiffness_assembler.add_functional_derivative()
+
+adjoint = stiffness_assembler.get_adjoint()
+dfdx = stiffness_assembler.get_dfdx()
+
+print(dfdx)
+
 
 # Solve the frequency problem using the Galerkin-difference approach
 N = 40
