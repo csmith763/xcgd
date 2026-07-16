@@ -100,12 +100,14 @@ PYBIND11_MODULE(xcgd, m) {
       .def(py::init<T, T>(), py::arg("E"), py::arg("nu"));
   py::class_<xcgd::ElasticityMass2D>(m, "ElasticityMass2D")
       .def(py::init<T>(), py::arg("rho"));
+  py::class_<xcgd::Area2D>(m, "Area2D").def(py::init<>());
 
   // Bind the different physics that is needed
   bind_assembler<T, xcgd::HelmholtzPhysics>(m, "HelmholtzAssembler");
   bind_assembler<T, xcgd::LinearElasticity2D<>>(m,
                                                 "LinearElasticity2DAssembler");
   bind_assembler<T, xcgd::ElasticityMass2D>(m, "ElasticityMass2DAssembler");
+  bind_assembler<T, xcgd::Area2D>(m, "Area2DAssembler");
 
   // Wrapper for the CSR matrix
   py::class_<xcgd::CSRMat<T>, std::shared_ptr<xcgd::CSRMat<T>>>(m, "CSRMat")

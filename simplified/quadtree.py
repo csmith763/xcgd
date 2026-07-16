@@ -97,16 +97,16 @@ dh = 1e-6
 pert = np.ones(len(lsf))
 
 cut_mesh.update()
-# interface_elems = cut_mesh.get_interface_elements()
-# interior_elems = cut_mesh.get_interior_elements()
+interface_elems = cut_mesh.get_interface_elements()
+interior_elems = cut_mesh.get_interior_elements()
 
-# refinement = np.zeros(tree.size(), dtype=np.int32)
-# refinement[interface_elems] = 2
-# refinement[interior_elems] = 1
-# tree.refine(refinement)
-# tree.balance()
+refinement = np.zeros(tree.size(), dtype=np.int32)
+refinement[interface_elems] = 2
+refinement[interior_elems] = 1
+tree.refine(refinement)
+tree.balance()
 
-# tree.to_vtk("refined_quadtree.vtk")
+tree.to_vtk("refined_quadtree.vtk")
 
 E, nu, rho = 1.0, 0.3, 1.0
 elas = xcgd.LinearElasticity2D(E, nu)

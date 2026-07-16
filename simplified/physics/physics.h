@@ -167,7 +167,7 @@ class ElasticityMass2D {
 class Area2D {
  public:
   static constexpr int spatial_dim = 2;
-  static constexpr int dof_per_node = 0;
+  static constexpr int dof_per_node = 1;
 
   template <typename T>
   using location_t = A2D::Vec<T, spatial_dim>;

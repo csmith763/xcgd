@@ -504,12 +504,6 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         }
       }
     }
-
-    T sum = 0.0;
-    for (int i = 0; i < dfdx.size(); i++) {
-      sum += dfdx[i];
-    }
-    std::cout << "sum = " << sum << std::endl;
   }
 
   void add_adjoint_residual_product(const std::vector<T>& dof,
