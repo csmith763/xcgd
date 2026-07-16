@@ -90,44 +90,85 @@ lsf = cut_mesh.get_lsf()
 
 x0 = 1.5
 y0 = 1.5
-r0 = 1.0
+r0 = 0.9873
 lsf[:] = (X[::2] - x0) ** 2 + (X[1::2] - y0) ** 2 - r0**2
 
+dh = 1e-6
+pert = np.ones(len(lsf))
+
 cut_mesh.update()
-interface_elems = cut_mesh.get_interface_elements()
-interior_elems = cut_mesh.get_interior_elements()
+# interface_elems = cut_mesh.get_interface_elements()
+# interior_elems = cut_mesh.get_interior_elements()
 
-refinement = np.zeros(tree.size(), dtype=np.int32)
-refinement[interface_elems] = 2
-refinement[interior_elems] = 1
-tree.refine(refinement)
-tree.balance()
+# refinement = np.zeros(tree.size(), dtype=np.int32)
+# refinement[interface_elems] = 2
+# refinement[interior_elems] = 1
+# tree.refine(refinement)
+# tree.balance()
 
-tree.to_vtk("refined_quadtree.vtk")
-
-mesh.update()
-cut_mesh.update()
-cut_mesh.update_derivatives()
-
-interior_mesh = cut_mesh.create_interior_mesh()
+# tree.to_vtk("refined_quadtree.vtk")
 
 E, nu, rho = 1.0, 0.3, 1.0
 elas = xcgd.LinearElasticity2D(E, nu)
 mass = xcgd.ElasticityMass2D(rho)
 
+# Update the underlying quadtree mesh to reflect the balance changes
+mesh.update()
+
+# Update the cut mesh and it's derivatives
+cut_mesh.update()
+cut_mesh.update_derivatives()
+
+# Get the interior mesh
+interior_mesh = cut_mesh.create_interior_mesh()
 stiffness_assembler = xcgd.Assembler(
     [xcgd.LinearElasticity2DAssembler(interior_mesh, elas)]
 )
 mass_assembler = xcgd.Assembler([xcgd.ElasticityMass2DAssembler(interior_mesh, mass)])
 
+# Set the degrees of freedom
+dof = stiffness_assembler.get_dof()
+dof_values = np.random.uniform(size=len(dof))
+# dof_values = np.ones(len(dof))
+dof[:] = dof_values
+
+# Evaluate the function
+f0 = stiffness_assembler.eval_functional()
+
 stiffness_assembler.zero_derivative()
 stiffness_assembler.add_functional_derivative()
 
-stiffness_assembler.update()
-adjoint = stiffness_assembler.get_adjoint()
+# Compute the analytic answer
 dfdx = stiffness_assembler.get_dfdx()
+analytic = np.dot(dfdx, pert)
 
-print(dfdx)
+# Perturb for finite-difference
+lsf = cut_mesh.get_lsf()
+lsf[:] += dh * pert
+
+# Update the cut mesh
+cut_mesh.update()
+
+# Create the new interior mesh
+interior_mesh = cut_mesh.create_interior_mesh()
+stiffness_assembler = xcgd.Assembler(
+    [xcgd.LinearElasticity2DAssembler(interior_mesh, elas)]
+)
+mass_assembler = xcgd.Assembler([xcgd.ElasticityMass2DAssembler(interior_mesh, mass)])
+
+dof = stiffness_assembler.get_dof()
+dof[:] = dof_values
+
+# Evaluate the function
+f1 = stiffness_assembler.eval_functional()
+
+fd = (f1 - f0) / dh
+
+print(f"f0       {f0:20.10e}")
+print(f"analytic {analytic:20.10e}")
+print(f"fd       {fd:20.10e}")
+print(f"rel err  {((analytic - fd) / fd):20.10e}")
+exit(0)
 
 # Solve the frequency problem using the Galerkin-difference approach
 N = 40

@@ -222,13 +222,15 @@ class QuadtreeCutMesh
         int nnodes = static_cast<int>(npts);
         Vandermonde2D interp(x0, y0, delta, nnodes, X,
                              detail::RegularPolyBasis2D{},
-                             detail::RegularPolyBasisDeriv2D{});
+                             detail::RegularPolyBasisDeriv2D{},
+                             detail::RegularPolyBasis2ndDeriv2D{});
         interp.eval_basis(num_quad_points, pts.data(), Nd.data());
       } else {
         int nnodes = static_cast<int>(npts);
         Vandermonde2D interp(x0, y0, delta, nnodes, X,
                              detail::PolyBasis2D(exclude),
-                             detail::PolyBasisDeriv2D(exclude));
+                             detail::PolyBasisDeriv2D(exclude),
+                             detail::PolyBasis2ndDeriv2D(exclude));
         interp.eval_basis(num_quad_points, pts.data(), Nd.data());
       }
     } else {
@@ -248,8 +250,8 @@ class QuadtreeCutMesh
   }
 
   void reverse_eval_basis(CutDomain domain, int elem, int num_quad_points,
-                          const std::vector<T>& pts, const std::vector<T>& bNd,
-                          std::vector<T> bpts) const {
+                          const std::vector<T>& pts, std::vector<T>& bNd,
+                          std::vector<T>& bpts) const {
     if (domain == CutDomain::INTERIOR_VOLUME ||
         domain == CutDomain::EXTERIOR_VOLUME) {
       T x0, y0, delta;
@@ -289,14 +291,16 @@ class QuadtreeCutMesh
         int nnodes = static_cast<int>(npts);
         Vandermonde2D interp(x0, y0, delta, nnodes, X,
                              detail::RegularPolyBasis2D{},
-                             detail::RegularPolyBasisDeriv2D{});
+                             detail::RegularPolyBasisDeriv2D{},
+                             detail::RegularPolyBasis2ndDeriv2D{});
         interp.reverse_eval_basis(num_quad_points, pts.data(), bNd.data(),
                                   bpts.data());
       } else {
         int nnodes = static_cast<int>(npts);
         Vandermonde2D interp(x0, y0, delta, nnodes, X,
                              detail::PolyBasis2D(exclude),
-                             detail::PolyBasisDeriv2D(exclude));
+                             detail::PolyBasisDeriv2D(exclude),
+                             detail::PolyBasis2ndDeriv2D(exclude));
         interp.reverse_eval_basis(num_quad_points, pts.data(), bNd.data(),
                                   bpts.data());
       }
@@ -1098,7 +1102,7 @@ class CutQuadMeshComponent final : public MeshBase<T> {
                                            dvs);
   }
   void reverse_eval_basis(int elem, int num_quad_points,
-                          const std::vector<T>& pts, const std::vector<T>& bNd,
+                          const std::vector<T>& pts, std::vector<T>& bNd,
                           std::vector<T>& bpts) const override {
     mesh->reverse_eval_basis(domain, elem, num_quad_points, pts, bNd, bpts);
   }

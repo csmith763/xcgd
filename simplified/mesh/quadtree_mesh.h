@@ -187,7 +187,8 @@ class QuadtreeMesh : public MeshBase<T> {
 
     Vandermonde2D interp(x0, y0, delta, nnodes, Xelem,
                          detail::PolyBasis2D(exclude[elem]),
-                         detail::PolyBasisDeriv2D(exclude[elem]));
+                         detail::PolyBasisDeriv2D(exclude[elem]),
+                         detail::PolyBasis2ndDeriv2D(exclude[elem]));
     return interp;
   }
 
@@ -248,7 +249,8 @@ class QuadtreeMesh : public MeshBase<T> {
 
     Vandermonde2D interp(x0, y0, delta, nnodes, Xelem,
                          detail::PolyBasis2D(exclude[elem]),
-                         detail::PolyBasisDeriv2D(exclude[elem]));
+                         detail::PolyBasisDeriv2D(exclude[elem]),
+                         detail::PolyBasis2ndDeriv2D(exclude[elem]));
 
     interp.eval_basis(num_quad_points, pts.data(), Nd.data());
   }

@@ -177,17 +177,19 @@ struct Lapack<float> {
  * dN/dx = dp/dx * C^{-1}
  *
  */
-template <typename T, class Basis, class BasisDeriv>
+template <typename T, class Basis, class BasisDeriv, class BasisDeriv2>
 class Vandermonde2D {
  public:
   Vandermonde2D(T x0, T y0, T delta, int num_nodes, const T* X,
-                const Basis& basis, const BasisDeriv& deriv)
+                const Basis& basis, const BasisDeriv& deriv,
+                const BasisDeriv2& deriv2)
       : x0(x0),
         y0(y0),
         delta(delta),
         num_nodes(num_nodes),
         basis(basis),
         deriv(deriv),
+        deriv2(deriv2),
         V(num_nodes * num_nodes),
         ipiv(num_nodes) {
     // Build the Vandermonde matrix
@@ -216,8 +218,8 @@ class Vandermonde2D {
    * @param vals The value at the node locations
    * @return T
    */
-
-  T eval(const T* pt, const T* vals) const {
+  template <typename R>
+  R eval(const T* pt, const R* vals) const {
     std::vector<T> N(num_nodes);
 
     T x = (pt[0] - x0) / delta;
@@ -229,7 +231,7 @@ class Vandermonde2D {
     detail::Lapack<T>::getrs('N', num_nodes, nrhs, V.data(), ipiv.data(),
                              N.data());
 
-    T value = 0.0;
+    R value = 0.0;
     for (int i = 0; i < num_nodes; i++) {
       value += N[i] * vals[i];
     }
@@ -247,10 +249,11 @@ class Vandermonde2D {
    */
   void eval_basis(int num_points, const T* pts, T* Nd) const {
     const int block_size = 3 * num_nodes;
-    const T inv = 1.0 / delta;
+    const T inv = T(1) / delta;
+
     for (int q = 0; q < num_points; q++) {
-      const T x = (pts[2 * q] - x0) / delta;
-      const T y = (pts[2 * q + 1] - y0) / delta;
+      const T x = inv * (pts[2 * q] - x0);
+      const T y = inv * (pts[2 * q + 1] - y0);
 
       T* p = &Nd[block_size * q];
       T* px = &Nd[block_size * q + num_nodes];
@@ -269,8 +272,47 @@ class Vandermonde2D {
     detail::Lapack<T>::getrs('N', num_nodes, nrhs, V.data(), ipiv.data(), Nd);
   }
 
-  void reverse_eval_basis(int num_points, const T* pts, const T* bNd,
-                          T* bpts) const {}
+  void reverse_eval_basis(int num_points, const T* pts, T* bNd, T* bpts) const {
+    const int block_size = 3 * num_nodes;
+    const int nrhs = 3 * num_points;
+    const T inv = T(1) / delta;
+
+    // bNd = V^{-T} bNd
+    detail::Lapack<T>::getrs('T', num_nodes, nrhs, V.data(), ipiv.data(), bNd);
+
+    std::vector<T> work(6 * num_nodes);
+    T* p = work.data();
+    T* px = p + num_nodes;
+    T* py = px + num_nodes;
+    T* pxx = py + num_nodes;
+    T* pxy = pxx + num_nodes;
+    T* pyy = pxy + num_nodes;
+
+    for (int q = 0; q < num_points; q++) {
+      const T x = inv * (pts[2 * q] - x0);
+      const T y = inv * (pts[2 * q + 1] - y0);
+
+      deriv2(x, y, p, px, py, pxx, pxy, pyy);
+
+      const T* bp = &bNd[block_size * q];
+      const T* bpx_scaled = bp + num_nodes;
+      const T* bpy_scaled = bpx_scaled + num_nodes;
+
+      T bx = T(0);
+      T by = T(0);
+
+      for (int i = 0; i < num_nodes; i++) {
+        const T bpx = inv * bpx_scaled[i];
+        const T bpy = inv * bpy_scaled[i];
+
+        bx += bp[i] * px[i] + bpx * pxx[i] + bpy * pxy[i];
+        by += bp[i] * py[i] + bpx * pxy[i] + bpy * pyy[i];
+      }
+
+      bpts[2 * q] = inv * bx;
+      bpts[2 * q + 1] = inv * by;
+    }
+  }
 
  private:
   T x0, y0;
@@ -278,6 +320,7 @@ class Vandermonde2D {
   int num_nodes;
   Basis basis;
   BasisDeriv deriv;
+  BasisDeriv2 deriv2;
 
   // Storage for the factorization of V
   std::vector<T> V;

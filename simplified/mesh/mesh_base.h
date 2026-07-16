@@ -34,7 +34,7 @@ class MeshBase {
   }
   virtual void reverse_eval_basis(int elem, int num_quad_points,
                                   const std::vector<T>& pts,
-                                  const std::vector<T>& bNd,
+                                  std::vector<T>& bNd,
                                   std::vector<T>& bpts) const {}
 };
 

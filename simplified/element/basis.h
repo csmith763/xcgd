@@ -100,6 +100,109 @@ class RegularPolyBasisDeriv2D {
   }
 };
 
+class RegularPolyBasis2ndDeriv2D {
+ public:
+  template <class T>
+  void operator()(T x, T y, T p[], T dx[], T dy[], T dxx[], T dxy[],
+                  T dyy[]) const {
+    T xp[4], yp[4];
+
+    xp[0] = T(1);
+    xp[1] = x;
+    xp[2] = x * xp[1];
+    xp[3] = x * xp[2];
+
+    yp[0] = T(1);
+    yp[1] = y;
+    yp[2] = y * yp[1];
+    yp[3] = y * yp[2];
+
+    // Basis values
+    p[0] = T(1);
+    p[1] = xp[1];
+    p[2] = yp[1];
+    p[3] = xp[2];
+    p[4] = xp[1] * yp[1];
+    p[5] = yp[2];
+    p[6] = xp[3];
+    p[7] = xp[2] * yp[1];
+    p[8] = xp[1] * yp[2];
+    p[9] = yp[3];
+    p[10] = xp[3] * yp[1];
+    p[11] = xp[1] * yp[3];
+
+    // First derivatives with respect to x
+    dx[0] = T(0);
+    dx[1] = T(1);
+    dx[2] = T(0);
+    dx[3] = T(2) * xp[1];
+    dx[4] = yp[1];
+    dx[5] = T(0);
+    dx[6] = T(3) * xp[2];
+    dx[7] = T(2) * xp[1] * yp[1];
+    dx[8] = yp[2];
+    dx[9] = T(0);
+    dx[10] = T(3) * xp[2] * yp[1];
+    dx[11] = yp[3];
+
+    // First derivatives with respect to y
+    dy[0] = T(0);
+    dy[1] = T(0);
+    dy[2] = T(1);
+    dy[3] = T(0);
+    dy[4] = xp[1];
+    dy[5] = T(2) * yp[1];
+    dy[6] = T(0);
+    dy[7] = xp[2];
+    dy[8] = T(2) * xp[1] * yp[1];
+    dy[9] = T(3) * yp[2];
+    dy[10] = xp[3];
+    dy[11] = T(3) * xp[1] * yp[2];
+
+    // Second derivatives with respect to x
+    dxx[0] = T(0);
+    dxx[1] = T(0);
+    dxx[2] = T(0);
+    dxx[3] = T(2);
+    dxx[4] = T(0);
+    dxx[5] = T(0);
+    dxx[6] = T(6) * xp[1];
+    dxx[7] = T(2) * yp[1];
+    dxx[8] = T(0);
+    dxx[9] = T(0);
+    dxx[10] = T(6) * xp[1] * yp[1];
+    dxx[11] = T(0);
+
+    // Mixed second derivatives
+    dxy[0] = T(0);
+    dxy[1] = T(0);
+    dxy[2] = T(0);
+    dxy[3] = T(0);
+    dxy[4] = T(1);
+    dxy[5] = T(0);
+    dxy[6] = T(0);
+    dxy[7] = T(2) * xp[1];
+    dxy[8] = T(2) * yp[1];
+    dxy[9] = T(0);
+    dxy[10] = T(3) * xp[2];
+    dxy[11] = T(3) * yp[2];
+
+    // Second derivatives with respect to y
+    dyy[0] = T(0);
+    dyy[1] = T(0);
+    dyy[2] = T(0);
+    dyy[3] = T(0);
+    dyy[4] = T(0);
+    dyy[5] = T(2);
+    dyy[6] = T(0);
+    dyy[7] = T(0);
+    dyy[8] = T(2) * xp[1];
+    dyy[9] = T(6) * yp[1];
+    dyy[10] = T(0);
+    dyy[11] = T(6) * xp[1] * yp[1];
+  }
+};
+
 class PolyBasis2D {
  public:
   PolyBasis2D(uint32_t exclude = uint32_t(0)) : exclude(exclude) {}
@@ -289,6 +392,119 @@ class PolyBasisDeriv2D {
         dy[counter] = py[i];
         counter++;
       }
+    }
+
+    return counter;
+  }
+};
+
+class PolyBasis2ndDeriv2D {
+ public:
+  PolyBasis2ndDeriv2D(uint32_t exclude = uint32_t(0)) : exclude(exclude) {}
+
+  static constexpr int MAX_BASIS = 20;
+  uint32_t exclude;
+
+  /**
+   * Evaluate the polynomial basis and its first and second derivatives.
+   *
+   * Outputs:
+   *   poly[i] = p_i(x, y)
+   *   dx[i]   = dp_i/dx
+   *   dy[i]   = dp_i/dy
+   *   dxx[i]  = d^2 p_i/dx^2
+   *   dxy[i]  = d^2 p_i/(dx dy)
+   *   dyy[i]  = d^2 p_i/dy^2
+   *
+   * Only basis terms whose exclude bit is zero are written.
+   *
+   * @return Number of included basis functions.
+   */
+  template <class T>
+  int operator()(T x, T y, T poly[], T dx[], T dy[], T dxx[], T dxy[],
+                 T dyy[]) const {
+    /*
+     * Exponents for each monomial x^a y^b, in exactly the same ordering
+     * as the original implementation.
+     */
+    static constexpr int x_degree[MAX_BASIS] = {
+        0, 1, 0,        // 1, x, y
+        2, 0, 1,        // x^2, y^2, xy
+        3, 0, 2, 1,     // x^3, y^3, x^2 y, x y^2
+        4, 0, 1, 2, 3,  // quartic terms
+        3, 2, 3,        // remaining Q3 terms
+        4, 1            // additional Q4 terms
+    };
+
+    static constexpr int y_degree[MAX_BASIS] = {
+        0, 0, 1,        // 1, x, y
+        0, 2, 1,        // x^2, y^2, xy
+        0, 3, 1, 2,     // x^3, y^3, x^2 y, x y^2
+        0, 4, 3, 2, 1,  // quartic terms
+        2, 3, 3,        // remaining Q3 terms
+        1, 4            // additional Q4 terms
+    };
+
+    T xp[5];
+    T yp[5];
+
+    xp[0] = T(1);
+    yp[0] = T(1);
+
+    for (int i = 1; i < 5; i++) {
+      xp[i] = x * xp[i - 1];
+      yp[i] = y * yp[i - 1];
+    }
+
+    int counter = 0;
+
+    for (int i = 0; i < MAX_BASIS; i++) {
+      if ((exclude & (uint32_t(1) << i)) != 0) {
+        continue;
+      }
+
+      const int a = x_degree[i];
+      const int b = y_degree[i];
+
+      // p = x^a y^b
+      poly[counter] = xp[a] * yp[b];
+
+      // dp/dx = a x^(a-1) y^b
+      if (a >= 1) {
+        dx[counter] = T(a) * xp[a - 1] * yp[b];
+      } else {
+        dx[counter] = T(0);
+      }
+
+      // dp/dy = b x^a y^(b-1)
+      if (b >= 1) {
+        dy[counter] = T(b) * xp[a] * yp[b - 1];
+      } else {
+        dy[counter] = T(0);
+      }
+
+      // d^2p/dx^2 = a(a-1) x^(a-2) y^b
+      if (a >= 2) {
+        dxx[counter] = T(a * (a - 1)) * xp[a - 2] * yp[b];
+      } else {
+        dxx[counter] = T(0);
+      }
+
+      // d^2p/(dx dy) = ab x^(a-1) y^(b-1)
+      if (a >= 1 && b >= 1) {
+        dxy[counter] = T(a * b) * xp[a - 1] * yp[b - 1];
+      } else {
+        dxy[counter] = T(0);
+      }
+
+      // d^2p/dy^2 = b(b-1) x^a y^(b-2)
+      if (b >= 2) {
+        dyy[counter] = T(b * (b - 1)) * xp[a] * yp[b - 2];
+      } else {
+        dyy[counter] = T(0);
+      }
+
+      counter++;
     }
 
     return counter;

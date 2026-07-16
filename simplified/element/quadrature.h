@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "dual.hpp"
 #include "quadrature_multipoly.hpp"
 #include "vandermonde.h"
 
@@ -12,28 +13,27 @@ namespace xcgd {
 
 enum class LevelSetDerivMethod { AD, CENTRAL_FD, FORWARD_FD };
 
-template <int spatial_dim, int degree, typename T, class Vandermonde>
+template <int spatial_dim, int degree, typename T, typename R,
+          class Vandermonde>
 void compute_level_set_quadrature(
-    T x0, T y0, T delta, const Vandermonde& interp, const std::vector<T>& lsf,
-    std::vector<T>& interior_points, std::vector<T>& interior_weights,
-    std::vector<T>& exterior_points, std::vector<T>& exterior_weights,
-    std::vector<T>& interface_points, std::vector<T>& interface_weights,
-    std::vector<T>& interface_normals) {
-  using algvec = algoim::uvector<T, spatial_dim>;
-
-  T data[(degree + 1) * (degree + 1)];
-  algoim::xarray<T, spatial_dim> phi(
+    T x0, T y0, T delta, const Vandermonde& interp, const std::vector<R>& lsf,
+    std::vector<R>& interior_points, std::vector<R>& interior_weights,
+    std::vector<R>& exterior_points, std::vector<R>& exterior_weights,
+    std::vector<R>& interface_points, std::vector<R>& interface_weights,
+    std::vector<R>& interface_normals) {
+  R data[(degree + 1) * (degree + 1)];
+  algoim::xarray<R, spatial_dim> phi(
       data, algoim::uvector<int, spatial_dim>(degree + 1, degree + 1));
 
   algoim::bernstein::bernsteinInterpolate<spatial_dim>(
-      [&](const algvec& xi) {  // xi in [0, 1]
+      [&](const algoim::uvector<T, spatial_dim>& xi) {  // xi in [0, 1]
         T pt[2] = {x0 + delta * xi(0), y0 + delta * xi(1)};
         return interp.eval(pt, lsf.data());
       },
       phi);
-  algoim::ImplicitPolyQuadrature<spatial_dim, T> ipquad(phi);
+  algoim::ImplicitPolyQuadrature<spatial_dim, R> ipquad(phi);
 
-  auto vol_func = [&](const algvec& x, T w) {
+  auto vol_func = [&](const algoim::uvector<R, spatial_dim>& x, R w) {
     if (algoim::bernstein::evalBernsteinPoly(phi, x) <= 0.0) {
       interior_points.push_back(x0 + delta * x(0));
       interior_points.push_back(y0 + delta * x(1));
@@ -46,20 +46,21 @@ void compute_level_set_quadrature(
   };
   ipquad.integrate(algoim::AutoMixed, degree + 1, vol_func);
 
-  auto surf_func = [&](const algvec& x, T w, const algvec& _) {
+  auto surf_func = [&](const algoim::uvector<R, spatial_dim>& x, R w,
+                       const algoim::uvector<R, spatial_dim>& _) {
     // Evaluate the gradient on the quadrature point
     // We assume that ipquad.phi.count() == 1 here
-    algvec g =
+    algoim::uvector<R, spatial_dim> g =
         algoim::bernstein::evalBernsteinPolyGradient(ipquad.phi.poly(0), x);
 
-    T nrm2 = T(0.0);
+    R nrm2 = R(0.0);
     for (int d = 0; d < spatial_dim; d++) {
       nrm2 += g(d) * g(d);
     }
-    T nrm = sqrt(nrm2);
+    R nrm = sqrt(nrm2);
 
     // Normalize g
-    algvec gn;
+    algoim::uvector<R, spatial_dim> gn;
     for (int d = 0; d < spatial_dim; d++) {
       gn(d) = g(d) / nrm;
     }
@@ -80,160 +81,221 @@ void compute_level_set_quadrature_derivatives(
     std::vector<T>& exterior_points_jac, std::vector<T>& exterior_weights_jac,
     std::vector<T>& interface_points_jac, std::vector<T>& interface_weights_jac,
     std::vector<T>& interface_normals_jac,
-    LevelSetDerivMethod method = LevelSetDerivMethod::FORWARD_FD,
-    T dh = T(1e-8)) {
+    LevelSetDerivMethod method = LevelSetDerivMethod::AD, T dh_rel = T(1e-8)) {
   const int n = static_cast<int>(lsf.size());
 
-  auto eval_quad =
-      [&](const std::vector<T>& lsf_eval, std::vector<T>& interior_points,
-          std::vector<T>& interior_weights, std::vector<T>& exterior_points,
-          std::vector<T>& exterior_weights, std::vector<T>& interface_points,
-          std::vector<T>& interface_weights,
-          std::vector<T>& interface_normals) {
-        interior_points.clear();
-        interior_weights.clear();
-        exterior_points.clear();
-        exterior_weights.clear();
-        interface_points.clear();
-        interface_weights.clear();
-        interface_normals.clear();
+  if (method == LevelSetDerivMethod::AD) {
+    using R = duals::dual<T>;
 
-        compute_level_set_quadrature<spatial_dim, degree, T, Vandermonde>(
-            x0, y0, delta, interp, lsf_eval, interior_points, interior_weights,
-            exterior_points, exterior_weights, interface_points,
-            interface_weights, interface_normals);
-      };
+    interior_points_jac.clear();
+    interior_weights_jac.clear();
+    exterior_points_jac.clear();
+    exterior_weights_jac.clear();
+    interface_points_jac.clear();
+    interface_weights_jac.clear();
+    interface_normals_jac.clear();
 
-  std::vector<T> interior_points_0, interior_weights_0;
-  std::vector<T> exterior_points_0, exterior_weights_0;
-  std::vector<T> interface_points_0, interface_weights_0, interface_normals_0;
+    std::vector<R> elem_lsf(n);
+    std::vector<R> interior_points, interior_weights;
+    std::vector<R> exterior_points, exterior_weights;
+    std::vector<R> interface_points, interface_weights, interface_normals;
 
-  eval_quad(lsf, interior_points_0, interior_weights_0, exterior_points_0,
-            exterior_weights_0, interface_points_0, interface_weights_0,
-            interface_normals_0);
+    auto add_column = [&](const std::vector<R>& y, std::vector<T>& jac,
+                          int col) {
+      const int m = static_cast<int>(y.size());
+      if (jac.size() == 0) {
+        jac.resize(m * n);
+      }
+      for (int row = 0; row < m; row++) {
+        jac[row + col * m] = y[row].dpart();
+      }
+    };
 
-  const int nip = static_cast<int>(interior_points_0.size());
-  const int niw = static_cast<int>(interior_weights_0.size());
-  const int nep = static_cast<int>(exterior_points_0.size());
-  const int newt = static_cast<int>(exterior_weights_0.size());
-  const int nfp = static_cast<int>(interface_points_0.size());
-  const int nfw = static_cast<int>(interface_weights_0.size());
-  const int nfn = static_cast<int>(interface_normals_0.size());
+    for (int col = 0; col < n; col++) {
+      for (int j = 0; j < n; j++) {
+        elem_lsf[j].rpart(lsf[j]);
+        elem_lsf[j].dpart(0.0);
+      }
+      elem_lsf[col].dpart(1.0);
 
-  interior_points_jac.assign(nip * n, T(0));
-  interior_weights_jac.assign(niw * n, T(0));
-  exterior_points_jac.assign(nep * n, T(0));
-  exterior_weights_jac.assign(newt * n, T(0));
-  interface_points_jac.assign(nfp * n, T(0));
-  interface_weights_jac.assign(nfw * n, T(0));
-  interface_normals_jac.assign(nfn * n, T(0));
+      interior_points.clear();
+      interior_weights.clear();
+      exterior_points.clear();
+      exterior_weights.clear();
+      interface_points.clear();
+      interface_weights.clear();
+      interface_normals.clear();
 
-  auto check_size = [](const std::vector<T>& v, int expected,
-                       const char* name) {
-    if (static_cast<int>(v.size()) != expected) {
-      throw std::runtime_error(
-          std::string("compute_level_set_quadrature_derivatives: output size "
-                      "changed for ") +
-          name +
-          ". The finite-difference derivative is not well-defined at this "
-          "level-set configuration.");
+      compute_level_set_quadrature<spatial_dim, degree>(
+          x0, y0, delta, interp, elem_lsf, interior_points, interior_weights,
+          exterior_points, exterior_weights, interface_points,
+          interface_weights, interface_normals);
+
+      add_column(interior_points, interior_points_jac, col);
+      add_column(interior_weights, interior_weights_jac, col);
+      add_column(exterior_points, exterior_points_jac, col);
+      add_column(exterior_weights, exterior_weights_jac, col);
+      add_column(interface_points, interface_points_jac, col);
+      add_column(interface_weights, interface_weights_jac, col);
+      add_column(interface_normals, interface_normals_jac, col);
     }
-  };
+  } else {
+    T diff = std::max_element(lsf.begin(), lsf.end()) -
+             std::min_element(lsf.begin(), lsf.end());
+    T dh = std::max(1e-12, dh_rel * diff);
 
-  auto add_column_forward = [](const std::vector<T>& y_plus,
-                               const std::vector<T>& y0, std::vector<T>& jac,
-                               int col, T inv_dh) {
-    const int m = static_cast<int>(y0.size());
-    for (int row = 0; row < m; row++) {
-      jac[row + col * m] = (y_plus[row] - y0[row]) * inv_dh;
-    }
-  };
+    auto eval_quad =
+        [&](const std::vector<T>& lsf_eval, std::vector<T>& interior_points,
+            std::vector<T>& interior_weights, std::vector<T>& exterior_points,
+            std::vector<T>& exterior_weights, std::vector<T>& interface_points,
+            std::vector<T>& interface_weights,
+            std::vector<T>& interface_normals) {
+          interior_points.clear();
+          interior_weights.clear();
+          exterior_points.clear();
+          exterior_weights.clear();
+          interface_points.clear();
+          interface_weights.clear();
+          interface_normals.clear();
 
-  auto add_column_central = [](const std::vector<T>& y_plus,
-                               const std::vector<T>& y_minus,
-                               std::vector<T>& jac, int col, T inv_2dh) {
-    const int m = static_cast<int>(y_plus.size());
-    for (int row = 0; row < m; row++) {
-      jac[row + col * m] = (y_plus[row] - y_minus[row]) * inv_2dh;
-    }
-  };
+          compute_level_set_quadrature<spatial_dim, degree>(
+              x0, y0, delta, interp, lsf_eval, interior_points,
+              interior_weights, exterior_points, exterior_weights,
+              interface_points, interface_weights, interface_normals);
+        };
 
-  const bool use_forward = (method == LevelSetDerivMethod::FORWARD_FD);
+    std::vector<T> interior_points_0, interior_weights_0;
+    std::vector<T> exterior_points_0, exterior_weights_0;
+    std::vector<T> interface_points_0, interface_weights_0, interface_normals_0;
 
-  for (int col = 0; col < n; col++) {
-    std::vector<T> lsf_plus = lsf;
-    lsf_plus[col] += dh;
+    eval_quad(lsf, interior_points_0, interior_weights_0, exterior_points_0,
+              exterior_weights_0, interface_points_0, interface_weights_0,
+              interface_normals_0);
 
-    std::vector<T> interior_points_p, interior_weights_p;
-    std::vector<T> exterior_points_p, exterior_weights_p;
-    std::vector<T> interface_points_p, interface_weights_p, interface_normals_p;
+    const int nip = static_cast<int>(interior_points_0.size());
+    const int niw = static_cast<int>(interior_weights_0.size());
+    const int nep = static_cast<int>(exterior_points_0.size());
+    const int newt = static_cast<int>(exterior_weights_0.size());
+    const int nfp = static_cast<int>(interface_points_0.size());
+    const int nfw = static_cast<int>(interface_weights_0.size());
+    const int nfn = static_cast<int>(interface_normals_0.size());
 
-    eval_quad(lsf_plus, interior_points_p, interior_weights_p,
-              exterior_points_p, exterior_weights_p, interface_points_p,
-              interface_weights_p, interface_normals_p);
+    interior_points_jac.assign(nip * n, T(0));
+    interior_weights_jac.assign(niw * n, T(0));
+    exterior_points_jac.assign(nep * n, T(0));
+    exterior_weights_jac.assign(newt * n, T(0));
+    interface_points_jac.assign(nfp * n, T(0));
+    interface_weights_jac.assign(nfw * n, T(0));
+    interface_normals_jac.assign(nfn * n, T(0));
 
-    check_size(interior_points_p, nip, "interior_points");
-    check_size(interior_weights_p, niw, "interior_weights");
-    check_size(exterior_points_p, nep, "exterior_points");
-    check_size(exterior_weights_p, newt, "exterior_weights");
-    check_size(interface_points_p, nfp, "interface_points");
-    check_size(interface_weights_p, nfw, "interface_weights");
-    check_size(interface_normals_p, nfn, "interface_normals");
+    auto check_size = [](const std::vector<T>& v, int expected,
+                         const char* name) {
+      if (static_cast<int>(v.size()) != expected) {
+        throw std::runtime_error(
+            std::string("compute_level_set_quadrature_derivatives: output size "
+                        "changed for ") +
+            name +
+            ". The finite-difference derivative is not well-defined at this "
+            "level-set configuration.");
+      }
+    };
 
-    if (use_forward) {
-      const T inv_dh = T(1) / dh;
+    auto add_column_forward = [](const std::vector<T>& y_plus,
+                                 const std::vector<T>& y0, std::vector<T>& jac,
+                                 int col, T inv_dh) {
+      const int m = static_cast<int>(y0.size());
+      for (int row = 0; row < m; row++) {
+        jac[row + col * m] = (y_plus[row] - y0[row]) * inv_dh;
+      }
+    };
 
-      add_column_forward(interior_points_p, interior_points_0,
-                         interior_points_jac, col, inv_dh);
-      add_column_forward(interior_weights_p, interior_weights_0,
-                         interior_weights_jac, col, inv_dh);
-      add_column_forward(exterior_points_p, exterior_points_0,
-                         exterior_points_jac, col, inv_dh);
-      add_column_forward(exterior_weights_p, exterior_weights_0,
-                         exterior_weights_jac, col, inv_dh);
-      add_column_forward(interface_points_p, interface_points_0,
-                         interface_points_jac, col, inv_dh);
-      add_column_forward(interface_weights_p, interface_weights_0,
-                         interface_weights_jac, col, inv_dh);
-      add_column_forward(interface_normals_p, interface_normals_0,
-                         interface_normals_jac, col, inv_dh);
-    } else {
-      std::vector<T> lsf_minus = lsf;
-      lsf_minus[col] -= dh;
+    auto add_column_central = [](const std::vector<T>& y_plus,
+                                 const std::vector<T>& y_minus,
+                                 std::vector<T>& jac, int col, T inv_2dh) {
+      const int m = static_cast<int>(y_plus.size());
+      for (int row = 0; row < m; row++) {
+        jac[row + col * m] = (y_plus[row] - y_minus[row]) * inv_2dh;
+      }
+    };
 
-      std::vector<T> interior_points_m, interior_weights_m;
-      std::vector<T> exterior_points_m, exterior_weights_m;
-      std::vector<T> interface_points_m, interface_weights_m,
-          interface_normals_m;
+    const bool use_forward = (method == LevelSetDerivMethod::FORWARD_FD);
 
-      eval_quad(lsf_minus, interior_points_m, interior_weights_m,
-                exterior_points_m, exterior_weights_m, interface_points_m,
-                interface_weights_m, interface_normals_m);
+    for (int col = 0; col < n; col++) {
+      std::vector<T> lsf_plus = lsf;
+      lsf_plus[col] += dh;
 
-      check_size(interior_points_m, nip, "interior_points");
-      check_size(interior_weights_m, niw, "interior_weights");
-      check_size(exterior_points_m, nep, "exterior_points");
-      check_size(exterior_weights_m, newt, "exterior_weights");
-      check_size(interface_points_m, nfp, "interface_points");
-      check_size(interface_weights_m, nfw, "interface_weights");
-      check_size(interface_normals_m, nfn, "interface_normals");
+      std::vector<T> interior_points_p, interior_weights_p;
+      std::vector<T> exterior_points_p, exterior_weights_p;
+      std::vector<T> interface_points_p, interface_weights_p,
+          interface_normals_p;
 
-      const T inv_2dh = T(0.5) / dh;
+      eval_quad(lsf_plus, interior_points_p, interior_weights_p,
+                exterior_points_p, exterior_weights_p, interface_points_p,
+                interface_weights_p, interface_normals_p);
 
-      add_column_central(interior_points_p, interior_points_m,
-                         interior_points_jac, col, inv_2dh);
-      add_column_central(interior_weights_p, interior_weights_m,
-                         interior_weights_jac, col, inv_2dh);
-      add_column_central(exterior_points_p, exterior_points_m,
-                         exterior_points_jac, col, inv_2dh);
-      add_column_central(exterior_weights_p, exterior_weights_m,
-                         exterior_weights_jac, col, inv_2dh);
-      add_column_central(interface_points_p, interface_points_m,
-                         interface_points_jac, col, inv_2dh);
-      add_column_central(interface_weights_p, interface_weights_m,
-                         interface_weights_jac, col, inv_2dh);
-      add_column_central(interface_normals_p, interface_normals_m,
-                         interface_normals_jac, col, inv_2dh);
+      check_size(interior_points_p, nip, "interior_points");
+      check_size(interior_weights_p, niw, "interior_weights");
+      check_size(exterior_points_p, nep, "exterior_points");
+      check_size(exterior_weights_p, newt, "exterior_weights");
+      check_size(interface_points_p, nfp, "interface_points");
+      check_size(interface_weights_p, nfw, "interface_weights");
+      check_size(interface_normals_p, nfn, "interface_normals");
+
+      if (use_forward) {
+        const T inv_dh = T(1) / dh;
+
+        add_column_forward(interior_points_p, interior_points_0,
+                           interior_points_jac, col, inv_dh);
+        add_column_forward(interior_weights_p, interior_weights_0,
+                           interior_weights_jac, col, inv_dh);
+        add_column_forward(exterior_points_p, exterior_points_0,
+                           exterior_points_jac, col, inv_dh);
+        add_column_forward(exterior_weights_p, exterior_weights_0,
+                           exterior_weights_jac, col, inv_dh);
+        add_column_forward(interface_points_p, interface_points_0,
+                           interface_points_jac, col, inv_dh);
+        add_column_forward(interface_weights_p, interface_weights_0,
+                           interface_weights_jac, col, inv_dh);
+        add_column_forward(interface_normals_p, interface_normals_0,
+                           interface_normals_jac, col, inv_dh);
+      } else {
+        std::vector<T> lsf_minus = lsf;
+        lsf_minus[col] -= dh;
+
+        std::vector<T> interior_points_m, interior_weights_m;
+        std::vector<T> exterior_points_m, exterior_weights_m;
+        std::vector<T> interface_points_m, interface_weights_m,
+            interface_normals_m;
+
+        eval_quad(lsf_minus, interior_points_m, interior_weights_m,
+                  exterior_points_m, exterior_weights_m, interface_points_m,
+                  interface_weights_m, interface_normals_m);
+
+        check_size(interior_points_m, nip, "interior_points");
+        check_size(interior_weights_m, niw, "interior_weights");
+        check_size(exterior_points_m, nep, "exterior_points");
+        check_size(exterior_weights_m, newt, "exterior_weights");
+        check_size(interface_points_m, nfp, "interface_points");
+        check_size(interface_weights_m, nfw, "interface_weights");
+        check_size(interface_normals_m, nfn, "interface_normals");
+
+        const T inv_2dh = T(0.5) / dh;
+
+        add_column_central(interior_points_p, interior_points_m,
+                           interior_points_jac, col, inv_2dh);
+        add_column_central(interior_weights_p, interior_weights_m,
+                           interior_weights_jac, col, inv_2dh);
+        add_column_central(exterior_points_p, exterior_points_m,
+                           exterior_points_jac, col, inv_2dh);
+        add_column_central(exterior_weights_p, exterior_weights_m,
+                           exterior_weights_jac, col, inv_2dh);
+        add_column_central(interface_points_p, interface_points_m,
+                           interface_points_jac, col, inv_2dh);
+        add_column_central(interface_weights_p, interface_weights_m,
+                           interface_weights_jac, col, inv_2dh);
+        add_column_central(interface_normals_p, interface_normals_m,
+                           interface_normals_jac, col, inv_2dh);
+      }
     }
   }
 }

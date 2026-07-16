@@ -228,13 +228,15 @@ class CartesianCutMesh
         int nnodes = static_cast<int>(npts);
         Vandermonde2D interp(x0, y0, delta, nnodes, X,
                              detail::RegularPolyBasis2D{},
-                             detail::RegularPolyBasisDeriv2D{});
+                             detail::RegularPolyBasisDeriv2D{},
+                             detail::RegularPolyBasis2ndDeriv2D{});
         interp.eval_basis(num_quad_points, pts.data(), Nd.data());
       } else {
         int nnodes = static_cast<int>(npts);
         Vandermonde2D interp(x0, y0, delta, nnodes, X,
                              detail::PolyBasis2D(exclude),
-                             detail::PolyBasisDeriv2D(exclude));
+                             detail::PolyBasisDeriv2D(exclude),
+                             detail::PolyBasis2ndDeriv2D(exclude));
         interp.eval_basis(num_quad_points, pts.data(), Nd.data());
       }
     } else {

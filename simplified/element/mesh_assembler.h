@@ -393,11 +393,9 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         get_element_vars(num_nodes, nodes, dof, elem_dof);
 
         // Zero the contributions to the gradient from this element
-        std::fill(bpoints.begin(),
-                  bpoints.begin() + spatial_dim * num_quad_points, T(0));
-
-        int n_size = num_quad_points * (num_nodes * (1 + spatial_dim));
-        std::fill(bNd.begin(), bNd.begin() + n_size, T(0));
+        std::fill(bpoints.begin(), bpoints.end(), T(0));
+        std::fill(bnormals.begin(), bnormals.end(), T(0));
+        std::fill(bNd.begin(), bNd.end(), T(0));
 
         // Perform the quadrature
         for (int i = 0; i < num_quad_points; i++) {
@@ -506,6 +504,12 @@ class MeshAssembler : public MeshAssemblerBase<T> {
         }
       }
     }
+
+    T sum = 0.0;
+    for (int i = 0; i < dfdx.size(); i++) {
+      sum += dfdx[i];
+    }
+    std::cout << "sum = " << sum << std::endl;
   }
 
   void add_adjoint_residual_product(const std::vector<T>& dof,

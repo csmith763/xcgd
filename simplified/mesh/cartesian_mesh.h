@@ -140,7 +140,8 @@ class CartesianMesh : public MeshBase<T> {
     T y0 = delta * j;
 
     Vandermonde2D interp(x0, y0, delta, nnodes, X, detail::RegularPolyBasis2D{},
-                         detail::RegularPolyBasisDeriv2D{});
+                         detail::RegularPolyBasisDeriv2D{},
+                         detail::RegularPolyBasis2ndDeriv2D{});
 
     interp.eval_basis(num_quad_points, pts.data(), Nd.data());
   }
@@ -155,7 +156,8 @@ class CartesianMesh : public MeshBase<T> {
     T y0 = delta * j;
 
     return Vandermonde2D(x0, y0, delta, nnodes, X, detail::RegularPolyBasis2D{},
-                         detail::RegularPolyBasisDeriv2D{});
+                         detail::RegularPolyBasisDeriv2D{},
+                         detail::RegularPolyBasis2ndDeriv2D{});
   }
 
   void get_element_base_point(int elem, T& x0, T& y0, T& delta_) const {
