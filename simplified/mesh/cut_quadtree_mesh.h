@@ -35,6 +35,74 @@ class QuadtreeCutMesh
     return interface_elems;
   }
 
+  std::vector<T> get_node_locations() {
+    const T length = mesh->get_length();
+    NodeArray& node_array = *mesh->get_node_array();
+
+    std::vector<T> X(2 * (num_interior_nodes + num_exterior_nodes));
+    constexpr std::int64_t hmax = std::int64_t(1) << Quadrant::MAX_LEVEL;
+
+    for (int i = 0; i < interior_node_map.size(); i++) {
+      int index = interior_node_map[i];
+      if (index >= 0) {
+        X[2 * index] = length * node_array[i].x / hmax;
+        X[2 * index + 1] = length * node_array[i].y / hmax;
+      }
+    }
+
+    for (int i = 0; i < exterior_node_map.size(); i++) {
+      int index = exterior_node_map[i];
+      if (index >= 0) {
+        X[2 * index] = length * node_array[i].x / hmax;
+        X[2 * index + 1] = length * node_array[i].y / hmax;
+      }
+    }
+
+    return X;
+  }
+
+  std::vector<std::array<T, 8>> get_cell_locations() {
+    const T length = mesh->get_length();
+    QuadrantArray& quads = *mesh->get_quadrants();
+    std::vector<std::array<T, 8>> X(quads.size());
+
+    constexpr std::int32_t hmax = 1 << Quadrant::MAX_LEVEL;
+
+    for (int elem = 0; elem < quads.size(); elem++) {
+      const Quadrant& q = quads[elem];
+      std::int32_t h = quads[elem].get_size();
+      for (int corner = 0; corner < 4; corner++) {
+        X[elem][2 * corner] = length * (q.x + h * (corner % 2)) / hmax;
+        X[elem][2 * corner + 1] = length * (q.y + h * (corner / 2)) / hmax;
+      }
+    }
+
+    return X;
+  }
+
+  const std::vector<std::vector<int>>& get_interior_stencil() {
+    return interior.stencil;
+  }
+  const std::vector<std::vector<int>>& get_interior_interface_stencil() {
+    return interface_interior.stencil;
+  }
+  const std::vector<std::vector<int>>& get_exterior_stencil() {
+    return exterior.stencil;
+  }
+  const std::vector<std::vector<int>>& get_exterior_interface_stencil() {
+    return interface_exterior.stencil;
+  }
+
+  const std::vector<std::vector<T>>& get_interior_quadrature_points() {
+    return interior_points;
+  }
+  const std::vector<std::vector<T>>& get_exterior_quadrature_points() {
+    return exterior_points;
+  }
+  const std::vector<std::vector<T>>& get_interface_quadrature_points() {
+    return interface_points;
+  }
+
   std::shared_ptr<MeshBase<T>> create_interior_mesh() {
     return std::make_shared<CutQuadMeshComponent<T>>(
         this->shared_from_this(), CutDomain::INTERIOR_VOLUME);

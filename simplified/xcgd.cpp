@@ -243,5 +243,21 @@ PYBIND11_MODULE(xcgd, m) {
       .def("create_exterior_mesh",
            &xcgd::QuadtreeCutMesh<T>::create_exterior_mesh)
       .def("create_interface_mesh",
-           &xcgd::QuadtreeCutMesh<T>::create_interface_mesh);
+           &xcgd::QuadtreeCutMesh<T>::create_interface_mesh)
+      .def("get_node_locations", &xcgd::QuadtreeCutMesh<T>::get_node_locations)
+      .def("get_cell_locations", &xcgd::QuadtreeCutMesh<T>::get_cell_locations)
+      .def("get_interior_stencil",
+           &xcgd::QuadtreeCutMesh<T>::get_interior_stencil)
+      .def("get_interior_interface_stencil",
+           &xcgd::QuadtreeCutMesh<T>::get_interior_interface_stencil)
+      .def("get_exterior_stencil",
+           &xcgd::QuadtreeCutMesh<T>::get_exterior_stencil)
+      .def("get_exterior_interface_stencil",
+           &xcgd::QuadtreeCutMesh<T>::get_exterior_interface_stencil)
+      .def("get_interior_quadrature_points",
+           &xcgd::QuadtreeCutMesh<T>::get_interior_quadrature_points)
+      .def("get_exterior_quadrature_points",
+           &xcgd::QuadtreeCutMesh<T>::get_exterior_quadrature_points)
+      .def("get_interface_quadrature_points",
+           &xcgd::QuadtreeCutMesh<T>::get_interface_quadrature_points);
 }
